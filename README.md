@@ -4,6 +4,8 @@
 
 ---
 
+https://github.com/user-attachments/assets/de2f2d99-421e-4e13-9bbc-9642a72611cd
+
 ## ✨ Features
 
 - **Modular Lua Scrapers ([neo-mangal-scrapers](https://github.com/kalebhenrique/neo-mangal-scrapers))**: Scrapers are decoupled from the Rust core into external Lua 5.4 scripts—providing instant updates without recompiling, and concurrent multi-source search.
