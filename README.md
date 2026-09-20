@@ -120,10 +120,3 @@ git clone git@github.com:kalebhenrique/neo-mangal.git
 cd neo-mangal
 make install
 ```
-
----
-
-## 📄 License & Attribution
-
-`neo-mangal` is licensed under the **MIT License**.  
-Special credit to **metafates** and the contributors of [mangal](https://github.com/metafates/mangal) for pioneering terminal manga scraping.
