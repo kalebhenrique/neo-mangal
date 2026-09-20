@@ -52,77 +52,88 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("neo-mangal {}", env!("CARGO_PKG_VERSION"));
                 return Ok(());
             }
-            "--help" | "-h" | "help" => {
+            "-help" | "help" | "--help" | "-h" => {
                 println!("neo-mangal ⚡ Modern Manga TUI downloader and KCC processor\n");
-                println!("Usage: neo-mangal [COMMAND]\n");
+                println!("Usage: neo-mangal [COMMAND]  (or: nmangal [COMMAND])\n");
                 println!("Commands:");
-                println!("  sources [install|list|reset|path]   Manage Lua manga scrapers");
-                println!("  update                              Update neo-mangal to latest version");
-                println!("  -v, --version                       Print version");
-                println!("  -h, --help                          Print this help menu\n");
+                println!("  sources list                List all installed Lua manga scrapers (alias: source list)");
+                println!("  sources install             Download or update official scrapers from GitHub");
+                println!("  sources reset               Reset and resync scrapers with repository (alias: source reset)");
+                println!("  sources path                Print directory path where scrapers are installed");
+                println!("  update                      Update neo-mangal to the latest version via curl");
+                println!("  -v, --version               Print version");
+                println!("  -h, --help, -help, help     Print this help message\n");
                 println!("Without arguments, starts the interactive TUI.");
                 return Ok(());
             }
+            "sources" | "source" => {
+                let sub = args.get(2).map(|s| s.as_str()).unwrap_or("list");
+                match sub {
+                    "install" => {
+                        println!("󰋩 Installing official manga scrapers into ~/.config/neo-mangal/sources/...");
+                        match scraper::SourceManager::install_sources_from_repo(scraper::manager::DEFAULT_REPO) {
+                            Ok(sources) => {
+                                println!("✓ Successfully installed {} scrapers:", sources.len());
+                                for s in sources {
+                                    println!("  • {}", s);
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("✗ Error installing scrapers: {}", e);
+                            }
+                        }
+                        return Ok(());
+                    }
+                    "list" => {
+                        let sources = scraper::SourceManager::list_sources();
+                        if sources.is_empty() {
+                            println!("No scrapers found in ~/.config/neo-mangal/sources/.");
+                            println!("Run 'neo-mangal sources install' to download official scrapers.");
+                        } else {
+                            println!("󰋩 Installed manga scrapers ({}) in ~/.config/neo-mangal/sources/:", sources.len());
+                            for s in sources {
+                                println!("  • {}", s);
+                            }
+                        }
+                        return Ok(());
+                    }
+                    "reset" => {
+                        let dir = scraper::SourceManager::sources_dir();
+                        println!("󰋩 Resetting manga scrapers in {:?}...", dir);
+                        match scraper::SourceManager::reset_sources() {
+                            Ok(sources) => {
+                                println!("✓ Successfully reset scrapers. Active sources ({}):", sources.len());
+                                for s in sources {
+                                    println!("  • {}", s);
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("✗ Error resetting scrapers: {}", e);
+                            }
+                        }
+                        return Ok(());
+                    }
+                    "path" | "dir" => {
+                        let dir = scraper::SourceManager::sources_dir();
+                        println!("{}", dir.display());
+                        return Ok(());
+                    }
+                    "-h" | "--help" | "-help" | "help" => {
+                        println!("Usage: neo-mangal sources [COMMAND]\n");
+                        println!("Commands:");
+                        println!("  list       List all installed Lua manga scrapers (default)");
+                        println!("  install    Download official scrapers into ~/.config/neo-mangal/sources/");
+                        println!("  reset      Reset scrapers and resync with repository");
+                        println!("  path       Print path of scrapers directory\n");
+                        return Ok(());
+                    }
+                    _ => {
+                        println!("Usage: neo-mangal sources [install|list|reset|path]");
+                        return Ok(());
+                    }
+                }
+            }
             _ => {}
-        }
-    }
-
-    if args.len() >= 2 && args[1] == "sources" {
-        let sub = args.get(2).map(|s| s.as_str()).unwrap_or("list");
-        match sub {
-            "install" => {
-                println!("󰋩 Installing official manga scrapers into ~/.config/neo-mangal/sources/...");
-                match scraper::SourceManager::install_sources_from_repo(scraper::manager::DEFAULT_REPO) {
-                    Ok(sources) => {
-                        println!("✓ Successfully installed {} scrapers:", sources.len());
-                        for s in sources {
-                            println!("  • {}", s);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("✗ Error installing scrapers: {}", e);
-                    }
-                }
-                return Ok(());
-            }
-            "list" => {
-                let sources = scraper::SourceManager::list_sources();
-                if sources.is_empty() {
-                    println!("No scrapers found in ~/.config/neo-mangal/sources/.");
-                    println!("Run 'neo-mangal sources install' to download official scrapers.");
-                } else {
-                    println!("󰋩 Installed manga scrapers ({}) in ~/.config/neo-mangal/sources/:", sources.len());
-                    for s in sources {
-                        println!("  • {}", s);
-                    }
-                }
-                return Ok(());
-            }
-            "reset" => {
-                let dir = scraper::SourceManager::sources_dir();
-                println!("󰋩 Resetting manga scrapers in {:?}...", dir);
-                match scraper::SourceManager::reset_sources() {
-                    Ok(sources) => {
-                        println!("✓ Successfully reset scrapers. Active sources ({}):", sources.len());
-                        for s in sources {
-                            println!("  • {}", s);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("✗ Error resetting scrapers: {}", e);
-                    }
-                }
-                return Ok(());
-            }
-            "path" | "dir" => {
-                let dir = scraper::SourceManager::sources_dir();
-                println!("{}", dir.display());
-                return Ok(());
-            }
-            _ => {
-                println!("Usage: neo-mangal sources [install|list|reset|path]");
-                return Ok(());
-            }
         }
     }
 

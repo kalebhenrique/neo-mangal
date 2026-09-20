@@ -228,17 +228,17 @@ impl I18n {
     pub fn settings_instructions(lang: AppLanguage) -> Vec<(&'static str, &'static str)> {
         match lang {
             AppLanguage::English => vec![
-                ("[Enter] ", "Save & Persist   "),
-                ("[l] ", "Language   "),
                 ("[p] ", "Kindle Model   "),
-                ("[o] ", "Format (AZW3/MOBI/EPUB)   "),
+                ("[o] ", "Format   "),
+                ("[l] ", "Language   "),
+                ("[Enter] ", "Save & Persist   "),
                 ("[Esc] ", "Cancel"),
             ],
             AppLanguage::Portuguese => vec![
-                ("[Enter] ", "Salvar e Persistir   "),
-                ("[l] ", "Idioma   "),
                 ("[p] ", "Modelo Kindle   "),
-                ("[o] ", "Formato (AZW3/MOBI/EPUB)   "),
+                ("[o] ", "Formato   "),
+                ("[l] ", "Idioma   "),
+                ("[Enter] ", "Salvar e Persistir   "),
                 ("[Esc] ", "Cancelar"),
             ],
         }
