@@ -9,11 +9,19 @@ use std::path::Path;
 use crate::config::Config;
 use crate::i18n::{AppLanguage, I18n};
 
+#[derive(Clone, Debug)]
+struct AutocompleteState {
+    base_dir: String,
+    matches: Vec<String>,
+    current_index: usize,
+}
+
 pub struct SettingsModal {
     pub input_path: String,
     pub language: String,
     pub profile: String,
     pub format: String,
+    autocomplete_state: Option<AutocompleteState>,
 }
 
 impl SettingsModal {
@@ -23,6 +31,7 @@ impl SettingsModal {
             language: config.language.clone(),
             profile: config.kcc_profile.clone(),
             format: config.kcc_format.clone(),
+            autocomplete_state: None,
         }
     }
 
@@ -31,11 +40,117 @@ impl SettingsModal {
     }
 
     pub fn handle_char(&mut self, c: char) {
+        self.autocomplete_state = None;
         self.input_path.push(c);
     }
 
     pub fn handle_backspace(&mut self) {
+        self.autocomplete_state = None;
         self.input_path.pop();
+    }
+
+    pub fn autocomplete_path(&mut self) {
+        // If already cycling through autocomplete matches, advance to next match
+        if let Some(ref mut state) = self.autocomplete_state {
+            if !state.matches.is_empty() {
+                state.current_index = (state.current_index + 1) % state.matches.len();
+                let choice = &state.matches[state.current_index];
+                self.input_path = format!("{}{}/", state.base_dir, choice);
+                return;
+            }
+        }
+
+        let raw = self.input_path.trim().to_string();
+        if raw.is_empty() {
+            if let Some(home) = dirs::home_dir() {
+                self.input_path = format!("{}/", home.display());
+            } else {
+                self.input_path = "./".to_string();
+            }
+            return;
+        }
+
+        // Split into base_dir (directory to search) and prefix (item name to complete)
+        let (base_dir, prefix) = if let Some(idx) = raw.rfind('/') {
+            (raw[..=idx].to_string(), raw[idx + 1..].to_string())
+        } else if let Some(idx) = raw.rfind('\\') {
+            (raw[..=idx].to_string(), raw[idx + 1..].to_string())
+        } else {
+            ("".to_string(), raw)
+        };
+
+        // Resolve base_dir to filesystem path
+        let resolved_dir: std::path::PathBuf = if base_dir.starts_with("~/") {
+            if let Some(home) = dirs::home_dir() {
+                home.join(&base_dir[2..])
+            } else {
+                std::path::PathBuf::from(&base_dir)
+            }
+        } else if base_dir == "~" {
+            dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."))
+        } else if base_dir.is_empty() {
+            std::path::PathBuf::from(".")
+        } else {
+            std::path::PathBuf::from(&base_dir)
+        };
+
+        if !resolved_dir.is_dir() {
+            return;
+        }
+
+        // Read entries in resolved_dir
+        let mut matches = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(&resolved_dir) {
+            let prefix_lower = prefix.to_lowercase();
+            for entry in entries.flatten() {
+                let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+                if is_dir {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if name.starts_with('.') && !prefix.starts_with('.') {
+                        continue;
+                    }
+                    if name.to_lowercase().starts_with(&prefix_lower) {
+                        matches.push(name);
+                    }
+                }
+            }
+        }
+
+        if matches.is_empty() {
+            return;
+        }
+
+        matches.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+
+        let common = find_common_prefix(&matches);
+
+        if matches.len() == 1 {
+            self.input_path = format!("{}{}/", base_dir, matches[0]);
+            self.autocomplete_state = Some(AutocompleteState {
+                base_dir,
+                matches,
+                current_index: 0,
+            });
+        } else if common.len() > prefix.len() {
+            let is_exact = matches.iter().any(|m| m == &common);
+            if is_exact {
+                self.input_path = format!("{}{}/", base_dir, common);
+            } else {
+                self.input_path = format!("{}{}", base_dir, common);
+            }
+            self.autocomplete_state = Some(AutocompleteState {
+                base_dir,
+                matches,
+                current_index: 0,
+            });
+        } else {
+            self.input_path = format!("{}{}/", base_dir, matches[0]);
+            self.autocomplete_state = Some(AutocompleteState {
+                base_dir,
+                matches,
+                current_index: 0,
+            });
+        }
     }
 
     pub fn cycle_profile(&mut self) {
@@ -183,6 +298,22 @@ impl SettingsModal {
     }
 }
 
+fn find_common_prefix(strs: &[String]) -> String {
+    if strs.is_empty() {
+        return String::new();
+    }
+    let mut prefix = strs[0].clone();
+    for s in &strs[1..] {
+        while !s.to_lowercase().starts_with(&prefix.to_lowercase()) {
+            if prefix.is_empty() {
+                return String::new();
+            }
+            prefix.pop();
+        }
+    }
+    prefix
+}
+
 pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
@@ -224,6 +355,33 @@ mod tests {
 
         modal.cycle_format();
         assert_eq!(modal.format, "AZW3");
+    }
+
+    #[test]
+    fn test_find_common_prefix() {
+        let items = vec!["Downloads".to_string(), "Documents".to_string()];
+        assert_eq!(find_common_prefix(&items), "Do");
+
+        let items2 = vec!["Manga".to_string(), "Mangadex".to_string(), "Mangal".to_string()];
+        assert_eq!(find_common_prefix(&items2), "Manga");
+    }
+
+    #[test]
+    fn test_autocomplete_path() {
+        let temp_dir = std::env::temp_dir().join("neo_mangal_autocomplete_test");
+        let _ = std::fs::create_dir_all(temp_dir.join("folder_alpha"));
+        let _ = std::fs::create_dir_all(temp_dir.join("folder_beta"));
+
+        let config = Config::default();
+        let mut modal = SettingsModal::new(&config);
+
+        // Test with prefix
+        modal.input_path = format!("{}/folder_a", temp_dir.display());
+        modal.autocomplete_path();
+        assert_eq!(modal.input_path, format!("{}/folder_alpha/", temp_dir.display()));
+
+        // Clean up
+        let _ = std::fs::remove_dir_all(temp_dir);
     }
 }
 

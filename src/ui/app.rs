@@ -361,7 +361,10 @@ impl App {
                         let _ = self.config.save();
                         self.active_modal = None;
                     }
-                    KeyCode::Tab | KeyCode::Char('p') => {
+                    KeyCode::Tab => {
+                        s.autocomplete_path();
+                    }
+                    KeyCode::Char('p') => {
                         s.cycle_profile();
                     }
                     KeyCode::Char('o') => {
