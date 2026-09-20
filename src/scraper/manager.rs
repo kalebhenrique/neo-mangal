@@ -8,16 +8,9 @@ pub const DEFAULT_REPO: &str = "kalebhenrique/neo-mangal-scrapers";
 pub struct SourceManager;
 
 impl SourceManager {
-    /// Returns the path to the sources directory: ~/.config/neo-mangal/sources or ~/Library/Application Support/neo-mangal/sources
+    /// Returns the path to the sources directory
     pub fn sources_dir() -> PathBuf {
-        if let Some(home) = dirs::home_dir() {
-            let dot_config = home.join(".config").join("neo-mangal").join("sources");
-            if dot_config.exists() {
-                return dot_config;
-            }
-        }
-        let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-        base.join("neo-mangal").join("sources")
+        crate::config::Config::app_dir().join("sources")
     }
 
     /// Ensures the sources directory exists

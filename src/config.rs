@@ -52,10 +52,36 @@ impl Config {
         }
     }
 
-    /// Returns the configuration file path (~/.config/neo-mangal/config.toml)
+    /// Returns the central application configuration & data directory.
+    /// Checks ~/.config/neo-mangal first, then system config directory.
+    pub fn app_dir() -> PathBuf {
+        // 1. Check ~/.config/neo-mangal
+        if let Some(home) = dirs::home_dir() {
+            let dot_config = home.join(".config").join("neo-mangal");
+            if dot_config.exists() {
+                return dot_config;
+            }
+        }
+        // 2. Check system config_dir (~/Library/Application Support/neo-mangal on macOS)
+        if let Some(sys_cfg) = dirs::config_dir() {
+            let sys_dir = sys_cfg.join("neo-mangal");
+            if sys_dir.exists() {
+                return sys_dir;
+            }
+        }
+        // 3. Fallback to ~/.config/neo-mangal if home exists, else system config
+        if let Some(home) = dirs::home_dir() {
+            let dot_config = home.join(".config").join("neo-mangal");
+            let _ = fs::create_dir_all(&dot_config);
+            return dot_config;
+        }
+        let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+        base.join("neo-mangal")
+    }
+
+    /// Returns the configuration file path
     pub fn config_path() -> PathBuf {
-        let base_dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-        base_dir.join("neo-mangal").join("config.toml")
+        Self::app_dir().join("config.toml")
     }
 
     /// Detect initial download directory, checking legacy mangal.toml if available

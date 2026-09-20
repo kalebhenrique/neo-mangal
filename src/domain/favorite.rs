@@ -42,21 +42,7 @@ pub struct FavoriteManager;
 impl FavoriteManager {
     /// Returns path to favorites.json file in config directory
     pub fn favorites_file() -> PathBuf {
-        let base = if let Some(home) = dirs::home_dir() {
-            let dot_config = home.join(".config").join("neo-mangal");
-            if dot_config.exists() {
-                dot_config
-            } else {
-                dirs::config_dir()
-                    .unwrap_or_else(|| PathBuf::from("."))
-                    .join("neo-mangal")
-            }
-        } else {
-            dirs::config_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join("neo-mangal")
-        };
-
+        let base = crate::config::Config::app_dir();
         if !base.exists() {
             let _ = fs::create_dir_all(&base);
         }
