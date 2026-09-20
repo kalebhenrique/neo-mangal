@@ -80,11 +80,13 @@ impl ChapterDownloader {
                     return Ok::<(), NeoError>(());
                 }
 
-                let response = client
-                    .get(&page_url)
-                    .header("Referer", "https://weebcentral.com/")
-                    .send()
-                    .await?;
+                let mut req = client.get(&page_url);
+                if let Ok(parsed) = reqwest::Url::parse(&page_url) {
+                    if let Some(host) = parsed.host_str() {
+                        req = req.header("Referer", format!("https://{}/", host));
+                    }
+                }
+                let response = req.send().await?;
 
                 if !response.status().is_success() {
                     return Err(NeoError::Download(format!(
