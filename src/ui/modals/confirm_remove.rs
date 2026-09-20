@@ -19,8 +19,8 @@ impl ConfirmRemoveModal {
     }
 
     pub fn render(&self, frame: &mut Frame, area: Rect, lang: AppLanguage) {
-        let w = (area.width * 55 / 100).max(46).min(area.width);
-        let h = 9.max(area.height * 28 / 100).min(area.height);
+        let w = 52.min(area.width.saturating_sub(2));
+        let h = 8.min(area.height);
         let x = area.x + (area.width.saturating_sub(w)) / 2;
         let y = area.y + (area.height.saturating_sub(h)) / 2;
         let modal_area = Rect {
