@@ -15,6 +15,7 @@ impl MangaListComponent {
         frame: &mut Frame,
         area: Rect,
         mangas: &[Manga],
+        favorites: &[crate::domain::favorite::FavoriteManga],
         state: &mut ListState,
         is_focused: bool,
         lang: AppLanguage,
@@ -36,12 +37,17 @@ impl MangaListComponent {
             .enumerate()
             .map(|(idx, manga)| {
                 let prefix = format!("{:2}. ", idx + 1);
-                let content = Line::from(vec![
+                let is_fav = crate::domain::favorite::FavoriteManager::is_favorite(favorites, &manga.url);
+                let mut spans = vec![
                     Span::styled(prefix, Style::default().fg(Color::DarkGray)),
-                    Span::styled(&manga.title, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-                    Span::styled(format!(" [{}]", manga.provider), Style::default().fg(Color::Magenta)),
-                ]);
-                ListItem::new(content)
+                ];
+                if is_fav {
+                    spans.push(Span::styled("★ ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+                }
+                spans.push(Span::styled(&manga.title, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)));
+                spans.push(Span::styled(format!(" [{}]", manga.provider), Style::default().fg(Color::Magenta)));
+
+                ListItem::new(Line::from(spans))
             })
             .collect();
 

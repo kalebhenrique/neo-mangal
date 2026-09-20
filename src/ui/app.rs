@@ -13,24 +13,26 @@ use crate::config::Config;
 use crate::converter::cbz::CbzPacker;
 use crate::converter::kcc::KccRunner;
 use crate::converter::toolchain::ToolchainStatus;
+use crate::domain::favorite::{FavoriteManga, FavoriteManager};
 use crate::domain::job::JobStatus;
 use crate::domain::manga::{Chapter, Manga};
 use crate::downloader::ChapterDownloader;
 use crate::error::NeoError;
 use crate::i18n::{AppLanguage, I18n};
 use crate::ui::components::{
-    ChapterListComponent, HeaderComponent, MangaListComponent, ProgressBarComponent,
-    SearchBarComponent, StatusBarComponent,
+    ChapterListComponent, FavoritesListComponent, HeaderComponent, MangaListComponent,
+    ProgressBarComponent, SearchBarComponent, StatusBarComponent,
 };
 use crate::scraper::manager::SourceManager;
 use crate::ui::events::AppEvent;
 use crate::ui::modals::{
-    AlertModal, InstallSourcesModal, KccMissingModal, ProcessModal, SettingsModal,
-    SourceSelectModal,
+    AlertModal, ConfirmRemoveModal, InstallSourcesModal, KccMissingModal, ProcessModal,
+    SettingsModal, SourceSelectModal,
 };
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum CurrentView {
+    Favorites,       // Browsing favorites on home screen
     Search,          // Typing inside search input
     SearchUnfocused, // Search input unfocused (can press 's' for settings, 'q' to quit)
     MangaResults,    // Browsing manga search results
@@ -44,6 +46,7 @@ pub enum ModalState {
     Alert(AlertModal),
     InstallSources(InstallSourcesModal),
     SourceSelect(SourceSelectModal),
+    ConfirmRemove(ConfirmRemoveModal),
 }
 
 pub struct App {
@@ -53,6 +56,10 @@ pub struct App {
     pub available_sources: Vec<String>,
     pub active_sources: Vec<String>,
     pub active_source: String,
+
+    // Favorites data
+    pub favorites: Vec<FavoriteManga>,
+    pub favorites_list_state: ListState,
 
     // Search and Manga data
     pub search_input: String,
@@ -73,6 +80,7 @@ pub struct App {
     pub is_busy: bool,
     pub job_status: JobStatus,
     pub should_quit: bool,
+    pub previous_view: Option<CurrentView>,
 
     // Async task event sender
     pub event_tx: mpsc::UnboundedSender<AppEvent>,
@@ -81,7 +89,21 @@ pub struct App {
 impl App {
     pub fn new(config: Config, event_tx: mpsc::UnboundedSender<AppEvent>) -> Self {
         let available_sources = SourceManager::list_sources();
-        let active_sources = available_sources.clone();
+        let active_sources = if !config.active_sources.is_empty() {
+            let valid: Vec<String> = config
+                .active_sources
+                .iter()
+                .filter(|s| available_sources.contains(s))
+                .cloned()
+                .collect();
+            if valid.is_empty() {
+                available_sources.clone()
+            } else {
+                valid
+            }
+        } else {
+            available_sources.clone()
+        };
         let active_source = if active_sources.is_empty() {
             "None".to_string()
         } else if active_sources.len() == 1 {
@@ -95,19 +117,27 @@ impl App {
         let active_modal = if available_sources.is_empty() {
             Some(ModalState::InstallSources(InstallSourcesModal::new()))
         } else {
-            Some(ModalState::SourceSelect(SourceSelectModal::new(
-                available_sources.clone(),
-                &active_sources,
-            )))
+            None
+        };
+
+        let favorites = FavoriteManager::load_favorites();
+        let mut favorites_list_state = ListState::default();
+        let current_view = if !favorites.is_empty() {
+            favorites_list_state.select(Some(0));
+            CurrentView::Favorites
+        } else {
+            CurrentView::Search
         };
 
         Self {
             config,
-            current_view: CurrentView::Search,
+            current_view,
             active_modal,
             available_sources,
             active_sources,
             active_source,
+            favorites,
+            favorites_list_state,
             search_input: String::new(),
             mangas: Vec::new(),
             manga_list_state: ListState::default(),
@@ -122,6 +152,7 @@ impl App {
             is_busy: false,
             job_status: JobStatus::Idle,
             should_quit: false,
+            previous_view: None,
             event_tx,
         }
     }
@@ -264,6 +295,16 @@ impl App {
                     true,
                 )));
             }
+            AppEvent::ChapterDownloaded {
+                manga_url,
+                chapter_title,
+            } => {
+                FavoriteManager::update_last_downloaded(
+                    &mut self.favorites,
+                    &manga_url,
+                    &chapter_title,
+                );
+            }
         }
     }
 
@@ -309,18 +350,15 @@ impl App {
         if let Some(ref mut modal) = self.active_modal {
             match modal {
                 ModalState::Settings(s) => match key.code {
-                    KeyCode::Esc => {
-                        self.active_modal = None;
-                    }
-                    KeyCode::Enter => {
+                    KeyCode::Esc | KeyCode::Enter => {
                         let new_path = s.input_path.trim();
                         if !new_path.is_empty() {
                             let _ = self.config.update_download_dir(new_path);
-                            self.config.language = s.language.clone();
-                            self.config.kcc_profile = s.profile.clone();
-                            self.config.kcc_format = s.format.clone();
-                            let _ = self.config.save();
                         }
+                        self.config.language = s.language.clone();
+                        self.config.kcc_profile = s.profile.clone();
+                        self.config.kcc_format = s.format.clone();
+                        let _ = self.config.save();
                         self.active_modal = None;
                     }
                     KeyCode::Tab | KeyCode::Char('p') => {
@@ -342,10 +380,14 @@ impl App {
                 },
                 ModalState::Process(p) => match key.code {
                     KeyCode::Esc => {
+                        self.config.kcc_format = p.format.clone();
+                        let _ = self.config.save();
                         self.active_modal = None;
                     }
                     KeyCode::Char('o') => {
                         p.cycle_format();
+                        self.config.kcc_format = p.format.clone();
+                        let _ = self.config.save();
                     }
                     KeyCode::Char('c') => {
                         p.toggle_kcc();
@@ -365,14 +407,15 @@ impl App {
                         let fuse_volume = p.fuse_volume;
                         let cover_opt = p.get_validated_path();
 
+                        self.config.kcc_format = selected_format;
+                        let _ = self.config.save();
+
                         if is_kcc {
                             let status = ToolchainStatus::check();
                             if !status.is_ready() {
                                 self.active_modal = Some(ModalState::KccMissing(KccMissingModal::new(status)));
                                 return;
                             }
-                            self.config.kcc_format = selected_format;
-                            let _ = self.config.save();
                         }
 
                         self.active_modal = None;
@@ -424,8 +467,19 @@ impl App {
                     _ => {}
                 },
                 ModalState::SourceSelect(ref mut sm) => match key.code {
-                    KeyCode::Esc => {
+                    KeyCode::Esc | KeyCode::Enter => {
+                        let selected = sm.get_selected_sources();
+                        self.active_sources = selected;
+                        self.config.active_sources = self.active_sources.clone();
+                        let _ = self.config.save();
+                        self.update_active_source_label();
                         self.active_modal = None;
+                        if self.current_view != CurrentView::Favorites
+                            && self.current_view != CurrentView::MangaResults
+                            && self.current_view != CurrentView::ChapterList
+                        {
+                            self.current_view = CurrentView::Search;
+                        }
                     }
                     KeyCode::Char('q') | KeyCode::Char('Q') => {
                         self.should_quit = true;
@@ -442,13 +496,29 @@ impl App {
                     KeyCode::Down | KeyCode::Char('j') => {
                         sm.move_down();
                     }
-                    KeyCode::Enter => {
-                        let selected = sm.get_selected_sources();
-                        self.active_sources = selected;
-                        self.update_active_source_label();
+                    _ => {}
+                },
+                ModalState::ConfirmRemove(ref cm) => match key.code {
+                    KeyCode::Enter
+                    | KeyCode::Char('y')
+                    | KeyCode::Char('Y')
+                    | KeyCode::Char('s')
+                    | KeyCode::Char('S') => {
+                        FavoriteManager::remove_favorite(&mut self.favorites, &cm.manga.url);
+                        if self.favorites.is_empty() {
+                            self.favorites_list_state.select(None);
+                            if self.current_view == CurrentView::Favorites {
+                                self.current_view = CurrentView::Search;
+                            }
+                        } else {
+                            let curr = self.favorites_list_state.selected().unwrap_or(0);
+                            let next_idx = curr.min(self.favorites.len().saturating_sub(1));
+                            self.favorites_list_state.select(Some(next_idx));
+                        }
                         self.active_modal = None;
-                        // Focus search view after choosing scrapers
-                        self.current_view = CurrentView::Search;
+                    }
+                    KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                        self.active_modal = None;
                     }
                     _ => {}
                 },
@@ -458,11 +528,62 @@ impl App {
 
         // 2. View-specific controls
         match self.current_view {
+            // Browsing favorites on home screen
+            CurrentView::Favorites => match key.code {
+                KeyCode::Char('q') => {
+                    self.should_quit = true;
+                }
+                KeyCode::Char('/') | KeyCode::Tab => {
+                    self.current_view = CurrentView::Search;
+                }
+                KeyCode::Char('p') | KeyCode::Char('P') => {
+                    if !self.available_sources.is_empty() {
+                        self.active_modal = Some(ModalState::SourceSelect(SourceSelectModal::new(
+                            self.available_sources.clone(),
+                            &self.active_sources,
+                        )));
+                    }
+                }
+                KeyCode::Char('s') => {
+                    self.active_modal = Some(ModalState::Settings(SettingsModal::new(&self.config)));
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.move_favorite_selection(-1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.move_favorite_selection(1);
+                }
+                KeyCode::Char('f') => {
+                    if let Some(idx) = self.favorites_list_state.selected() {
+                        if let Some(fav) = self.favorites.get(idx) {
+                            self.active_modal = Some(ModalState::ConfirmRemove(
+                                ConfirmRemoveModal::new(fav.to_manga()),
+                            ));
+                        }
+                    }
+                }
+                KeyCode::Enter => {
+                    if let Some(idx) = self.favorites_list_state.selected() {
+                        if let Some(fav) = self.favorites.get(idx).cloned() {
+                            let manga = fav.to_manga();
+                            let provider = manga.provider.clone();
+                            self.selected_manga = Some(manga.clone());
+                            self.previous_view = Some(CurrentView::Favorites);
+                            self.trigger_fetch_chapters(manga.url, provider);
+                        }
+                    }
+                }
+                _ => {}
+            },
+
             // Actively typing in search
             CurrentView::Search => match key.code {
                 KeyCode::Esc => {
-                    // Unfocus search bar without closing the program!
-                    self.current_view = CurrentView::SearchUnfocused;
+                    if !self.favorites.is_empty() {
+                        self.current_view = CurrentView::Favorites;
+                    } else {
+                        self.current_view = CurrentView::SearchUnfocused;
+                    }
                 }
                 KeyCode::Enter => {
                     let q = self.search_input.trim().to_string();
@@ -473,6 +594,8 @@ impl App {
                 KeyCode::Tab | KeyCode::Down => {
                     if !self.mangas.is_empty() {
                         self.current_view = CurrentView::MangaResults;
+                    } else if !self.favorites.is_empty() {
+                        self.current_view = CurrentView::Favorites;
                     } else {
                         self.current_view = CurrentView::SearchUnfocused;
                     }
@@ -508,6 +631,8 @@ impl App {
                 KeyCode::Down | KeyCode::Tab => {
                     if !self.mangas.is_empty() {
                         self.current_view = CurrentView::MangaResults;
+                    } else if !self.favorites.is_empty() {
+                        self.current_view = CurrentView::Favorites;
                     }
                 }
                 _ => {}
@@ -519,10 +644,27 @@ impl App {
                     self.should_quit = true;
                 }
                 KeyCode::Esc | KeyCode::Char('b') => {
-                    self.current_view = CurrentView::SearchUnfocused;
+                    if !self.favorites.is_empty() {
+                        self.current_view = CurrentView::Favorites;
+                    } else {
+                        self.current_view = CurrentView::SearchUnfocused;
+                    }
                 }
                 KeyCode::Char('/') => {
                     self.current_view = CurrentView::Search;
+                }
+                KeyCode::Char('f') => {
+                    if let Some(idx) = self.manga_list_state.selected() {
+                        if let Some(manga) = self.mangas.get(idx) {
+                            if FavoriteManager::is_favorite(&self.favorites, &manga.url) {
+                                self.active_modal = Some(ModalState::ConfirmRemove(
+                                    ConfirmRemoveModal::new(manga.clone()),
+                                ));
+                            } else {
+                                FavoriteManager::toggle_favorite(&mut self.favorites, manga);
+                            }
+                        }
+                    }
                 }
                 KeyCode::Char('p') | KeyCode::Char('P') => {
                     if !self.available_sources.is_empty() {
@@ -535,10 +677,10 @@ impl App {
                 KeyCode::Char('s') => {
                     self.active_modal = Some(ModalState::Settings(SettingsModal::new(&self.config)));
                 }
-                KeyCode::Up => {
+                KeyCode::Up | KeyCode::Char('k') => {
                     self.move_manga_selection(-1);
                 }
-                KeyCode::Down => {
+                KeyCode::Down | KeyCode::Char('j') => {
                     self.move_manga_selection(1);
                 }
                 KeyCode::Enter => {
@@ -546,6 +688,7 @@ impl App {
                         if let Some(manga) = self.mangas.get(idx).cloned() {
                             let provider = manga.provider.clone();
                             self.selected_manga = Some(manga.clone());
+                            self.previous_view = Some(CurrentView::MangaResults);
                             self.trigger_fetch_chapters(manga.url, provider);
                         }
                     }
@@ -580,7 +723,15 @@ impl App {
                             self.should_quit = true;
                         }
                         KeyCode::Esc | KeyCode::Char('b') => {
-                            self.current_view = CurrentView::MangaResults;
+                            if let Some(prev) = self.previous_view.take() {
+                                self.current_view = prev;
+                            } else if !self.favorites.is_empty() {
+                                self.current_view = CurrentView::Favorites;
+                            } else if !self.mangas.is_empty() {
+                                self.current_view = CurrentView::MangaResults;
+                            } else {
+                                self.current_view = CurrentView::Search;
+                            }
                         }
                         KeyCode::Char('s') => {
                             self.active_modal =
@@ -661,6 +812,15 @@ impl App {
                 }
             }
         }
+    }
+
+    fn move_favorite_selection(&mut self, delta: isize) {
+        if self.favorites.is_empty() {
+            return;
+        }
+        let current = self.favorites_list_state.selected().unwrap_or(0) as isize;
+        let next = (current + delta).clamp(0, self.favorites.len() as isize - 1) as usize;
+        self.favorites_list_state.select(Some(next));
     }
 
     fn move_manga_selection(&mut self, delta: isize) {
@@ -934,6 +1094,10 @@ impl App {
                     let output_dir = config.download_dir.join(&sanitized_manga);
                     match KccRunner::convert(&cbz_path, &output_dir, &config, Some(kcc_tx)).await {
                         Ok(final_path) => {
+                            let _ = tx.send(AppEvent::ChapterDownloaded {
+                                manga_url: manga.url.clone(),
+                                chapter_title: chapter.title.clone(),
+                            });
                             let _ = tx.send(AppEvent::OperationSuccess(format!(
                                 "Kindle output ready:\n{}",
                                 final_path.display()
@@ -948,6 +1112,10 @@ impl App {
                         }
                     }
                 } else {
+                    let _ = tx.send(AppEvent::ChapterDownloaded {
+                        manga_url: manga.url.clone(),
+                        chapter_title: chapter.title.clone(),
+                    });
                     let _ = tx.send(AppEvent::OperationSuccess(format!(
                         "CBZ direct save complete:\n{}",
                         cbz_path.display()
@@ -993,6 +1161,7 @@ impl App {
 
         let first_title = target_chapters.first().map(|c| c.title.as_str()).unwrap_or("Start");
         let last_title = target_chapters.last().map(|c| c.title.as_str()).unwrap_or("End");
+        let last_chapter_name = last_title.to_string();
         let volume_name = if target_chapters.len() == 1 {
             first_title.to_string()
         } else {
@@ -1100,6 +1269,10 @@ impl App {
                 let output_dir = config.download_dir.join(&sanitized_manga);
                 match KccRunner::convert(&cbz_path, &output_dir, &config, Some(kcc_tx)).await {
                     Ok(final_path) => {
+                        let _ = tx.send(AppEvent::ChapterDownloaded {
+                            manga_url: manga.url.clone(),
+                            chapter_title: last_chapter_name.clone(),
+                        });
                         let _ = tx.send(AppEvent::OperationSuccess(format!(
                             "Kindle Volume ready:\n{}",
                             final_path.display()
@@ -1114,6 +1287,10 @@ impl App {
                     }
                 }
             } else {
+                let _ = tx.send(AppEvent::ChapterDownloaded {
+                    manga_url: manga.url.clone(),
+                    chapter_title: last_chapter_name.clone(),
+                });
                 let _ = tx.send(AppEvent::OperationSuccess(format!(
                     "Volume Fusion complete!\nSaved at: {}",
                     cbz_path.display()
@@ -1147,14 +1324,46 @@ impl App {
 
         // 3. Main Content
         match self.current_view {
-            CurrentView::Search | CurrentView::SearchUnfocused | CurrentView::MangaResults => {
-                let is_focused = self.current_view == CurrentView::MangaResults;
+            CurrentView::Favorites => {
+                FavoritesListComponent::render(
+                    frame,
+                    chunks[2],
+                    &self.favorites,
+                    &mut self.favorites_list_state,
+                    true,
+                    lang,
+                );
+            }
+            CurrentView::Search | CurrentView::SearchUnfocused => {
+                if self.mangas.is_empty() {
+                    FavoritesListComponent::render(
+                        frame,
+                        chunks[2],
+                        &self.favorites,
+                        &mut self.favorites_list_state,
+                        false,
+                        lang,
+                    );
+                } else {
+                    MangaListComponent::render(
+                        frame,
+                        chunks[2],
+                        &self.mangas,
+                        &self.favorites,
+                        &mut self.manga_list_state,
+                        false,
+                        lang,
+                    );
+                }
+            }
+            CurrentView::MangaResults => {
                 MangaListComponent::render(
                     frame,
                     chunks[2],
                     &self.mangas,
+                    &self.favorites,
                     &mut self.manga_list_state,
-                    is_focused,
+                    true,
                     lang,
                 );
             }
@@ -1190,6 +1399,7 @@ impl App {
 
         // 5. Status Bar
         let view_str = match self.current_view {
+            CurrentView::Favorites => "favorites",
             CurrentView::Search => "search",
             CurrentView::SearchUnfocused => "search_unfocused",
             CurrentView::MangaResults => "manga_list",
@@ -1213,6 +1423,7 @@ impl App {
                 ModalState::Alert(a) => a.render(frame, area),
                 ModalState::InstallSources(im) => im.render(frame, area, lang),
                 ModalState::SourceSelect(ss) => ss.render(frame, area, lang),
+                ModalState::ConfirmRemove(cr) => cr.render(frame, area, lang),
             }
         }
     }
@@ -1275,33 +1486,169 @@ mod tests {
     }
 
     #[test]
-    fn test_initial_source_select_modal() {
+    fn test_initial_screen_and_source_modal() {
         let (tx, _rx) = mpsc::unbounded_channel();
         let mut app = App::new(Config::default(), tx);
 
         if !app.available_sources.is_empty() {
-            // Should open SourceSelectModal by default on launch
+            // Should NOT force open SourceSelectModal by default on launch anymore!
+            assert!(app.active_modal.is_none());
+
+            // Global shortcut Ctrl+P opens SourceSelect modal from any view
+            app.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
             match &app.active_modal {
                 Some(ModalState::SourceSelect(_)) => {}
-                _ => panic!("Expected SourceSelect modal on launch when sources are available"),
+                _ => panic!("Expected SourceSelect modal when pressing Ctrl+P"),
             }
 
             // Pressing Space toggles selection
             app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
 
-            // Pressing Enter chooses the selected sources and closes modal to focus Search
+            // Pressing Enter chooses the selected sources and closes modal
             app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
             assert!(app.active_modal.is_none());
-            assert_eq!(app.current_view, CurrentView::Search);
             assert!(!app.active_sources.is_empty());
 
-            // Pressing 'p' in SearchUnfocused re-opens the SourceSelect modal
-            app.current_view = CurrentView::SearchUnfocused;
+            // In Favorites view, 'p' also opens the modal
+            app.current_view = CurrentView::Favorites;
             app.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE));
             match &app.active_modal {
                 Some(ModalState::SourceSelect(_)) => {}
-                _ => panic!("Expected SourceSelect modal when pressing 'p' in SearchUnfocused"),
+                _ => panic!("Expected SourceSelect modal when pressing 'p' in Favorites view"),
             }
+
+            // Pressing Esc closes the modal AND saves the selected sources!
+            app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+            assert!(app.active_modal.is_none());
+            assert!(!app.active_sources.is_empty());
         }
+    }
+
+    #[test]
+    fn test_favorite_toggle_and_last_chapter_event() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut app = App::new(Config::default(), tx);
+
+        let manga = Manga {
+            id: "one-piece".into(),
+            title: "One Piece".into(),
+            url: "https://example.com/one-piece".into(),
+            cover_url: None,
+            provider: "WeebCentral".into(),
+        };
+
+        app.mangas = vec![manga.clone()];
+        app.manga_list_state.select(Some(0));
+        app.current_view = CurrentView::MangaResults;
+
+        // Press 'f' to favorite the selected manga
+        app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
+        assert!(app.favorites.iter().any(|f| f.url == manga.url));
+
+        // Simulate chapter downloaded event
+        app.handle_event(AppEvent::ChapterDownloaded {
+            manga_url: manga.url.clone(),
+            chapter_title: "Chapter 1111".into(),
+        });
+
+        let fav = app.favorites.iter().find(|f| f.url == manga.url).unwrap();
+        assert_eq!(fav.last_downloaded_chapter.as_deref(), Some("Chapter 1111"));
+
+        // Press 'f' again opens confirmation modal
+        app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
+        assert!(matches!(app.active_modal, Some(ModalState::ConfirmRemove(_))));
+
+        // Confirm removal with Enter
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(!app.favorites.iter().any(|f| f.url == manga.url));
+        assert!(app.active_modal.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_navigation_stack_and_persistence() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut app = App::new(Config::default(), tx);
+
+        let manga = Manga {
+            id: "naruto".into(),
+            title: "Naruto".into(),
+            url: "https://example.com/naruto".into(),
+            cover_url: None,
+            provider: "WeebCentral".into(),
+        };
+
+        // Add a favorite
+        app.favorites = vec![FavoriteManga::from_manga(&manga)];
+        app.favorites_list_state.select(Some(0));
+        app.current_view = CurrentView::Favorites;
+
+        // User had previously searched something
+        app.mangas = vec![manga.clone()];
+
+        // User enters favorite manga chapters from Favorites view
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.previous_view, Some(CurrentView::Favorites));
+
+        // Emulate chapters loaded
+        app.current_view = CurrentView::ChapterList;
+
+        // User presses Esc -> MUST return to Favorites, NOT MangaResults!
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.current_view, CurrentView::Favorites);
+
+        // Now test entering chapters from MangaResults
+        app.current_view = CurrentView::MangaResults;
+        app.manga_list_state.select(Some(0));
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.previous_view, Some(CurrentView::MangaResults));
+
+        app.current_view = CurrentView::ChapterList;
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.current_view, CurrentView::MangaResults);
+    }
+
+    #[test]
+    fn test_confirm_remove_favorite_flow() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut app = App::new(Config::default(), tx);
+
+        let manga = Manga {
+            id: "bleach".into(),
+            title: "Bleach".into(),
+            url: "https://example.com/bleach".into(),
+            cover_url: None,
+            provider: "MangaDex".into(),
+        };
+
+        app.favorites = vec![FavoriteManga::from_manga(&manga)];
+        app.favorites_list_state.select(Some(0));
+        app.current_view = CurrentView::Favorites;
+
+        // 1. Pressing 'd' or Delete should do NOTHING
+        app.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
+        assert!(app.active_modal.is_none());
+        assert_eq!(app.favorites.len(), 1);
+
+        app.handle_key(KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE));
+        assert!(app.active_modal.is_none());
+        assert_eq!(app.favorites.len(), 1);
+
+        // 2. Pressing 'f' opens confirmation modal
+        app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
+        assert!(matches!(app.active_modal, Some(ModalState::ConfirmRemove(_))));
+
+        // 3. Pressing 'n' or Esc cancels the modal
+        app.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
+        assert!(app.active_modal.is_none());
+        assert_eq!(app.favorites.len(), 1);
+
+        // 4. Pressing 'f' again and confirming with 's' (Portuguese Sim) or 'y' or Enter
+        app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
+        assert!(matches!(app.active_modal, Some(ModalState::ConfirmRemove(_))));
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE));
+        assert!(app.active_modal.is_none());
+        assert_eq!(app.favorites.len(), 0);
+        assert_eq!(app.current_view, CurrentView::Search);
     }
 }

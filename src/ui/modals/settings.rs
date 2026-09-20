@@ -49,7 +49,7 @@ impl SettingsModal {
     }
 
     pub fn cycle_format(&mut self) {
-        let formats = ["AZW3", "MOBI", "EPUB"];
+        let formats = ["AZW3", "CBZ", "EPUB", "MOBI"];
         if let Some(pos) = formats.iter().position(|&f| f.eq_ignore_ascii_case(&self.format)) {
             let next_idx = (pos + 1) % formats.len();
             self.format = formats[next_idx].to_string();
@@ -214,10 +214,13 @@ mod tests {
         assert_eq!(modal.format, "AZW3");
 
         modal.cycle_format();
-        assert_eq!(modal.format, "MOBI");
+        assert_eq!(modal.format, "CBZ");
 
         modal.cycle_format();
         assert_eq!(modal.format, "EPUB");
+
+        modal.cycle_format();
+        assert_eq!(modal.format, "MOBI");
 
         modal.cycle_format();
         assert_eq!(modal.format, "AZW3");

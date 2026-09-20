@@ -17,6 +17,10 @@ pub enum AppEvent {
     KccStatus(String),
     OperationSuccess(String),
     OperationError(String),
+    ChapterDownloaded {
+        manga_url: String,
+        chapter_title: String,
+    },
 }
 
 pub struct EventHandler {
