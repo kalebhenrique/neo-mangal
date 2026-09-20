@@ -69,8 +69,6 @@ pipx install git+https://github.com/ciromattia/kcc.git
 
 Install **[Amazon Kindle Previewer](https://www.amazon.com/Kindle-Previewer/b?ie=UTF8&node=21381691011)** directly from Amazon:
 
-- **Download**: [Amazon Kindle Previewer 3](https://www.amazon.com/Kindle-Previewer/b?ie=UTF8&node=21381691011)
-
 > [!NOTE]
 > `neo-mangal` automatically discovers `kindlegen` inside `/Applications/Kindle Previewer 3.app/Contents/lib/fc/bin/kindlegen`. No manual PATH configuration or file copying is required.
 
