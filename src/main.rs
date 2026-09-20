@@ -23,8 +23,50 @@ use ui::{App, EventHandler};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 0. Handle CLI arguments (e.g. neo-mangal sources install)
+    // 0. Handle CLI arguments (e.g. neo-mangal update, neo-mangal sources)
     let args: Vec<String> = std::env::args().collect();
+    if args.len() >= 2 {
+        match args[1].as_str() {
+            "update" | "self-update" => {
+                println!("🚀 Running neo-mangal installer/updater via curl...");
+                let script_cmd = "curl -fsSL https://raw.githubusercontent.com/kalebhenrique/neo-mangal/main/install.sh | sh";
+                let status = std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(script_cmd)
+                    .status();
+
+                match status {
+                    Ok(s) if s.success() => {
+                        println!("\n✨ neo-mangal updated successfully!");
+                    }
+                    Ok(s) => {
+                        eprintln!("\n✗ Update failed with status: {}", s);
+                    }
+                    Err(e) => {
+                        eprintln!("\n✗ Failed to execute update command: {}", e);
+                    }
+                }
+                return Ok(());
+            }
+            "--version" | "-v" => {
+                println!("neo-mangal {}", env!("CARGO_PKG_VERSION"));
+                return Ok(());
+            }
+            "--help" | "-h" | "help" => {
+                println!("neo-mangal ⚡ Modern Manga TUI downloader and KCC processor\n");
+                println!("Usage: neo-mangal [COMMAND]\n");
+                println!("Commands:");
+                println!("  sources [install|list|reset|path]   Manage Lua manga scrapers");
+                println!("  update                              Update neo-mangal to latest version");
+                println!("  -v, --version                       Print version");
+                println!("  -h, --help                          Print this help menu\n");
+                println!("Without arguments, starts the interactive TUI.");
+                return Ok(());
+            }
+            _ => {}
+        }
+    }
+
     if args.len() >= 2 && args[1] == "sources" {
         let sub = args.get(2).map(|s| s.as_str()).unwrap_or("list");
         match sub {

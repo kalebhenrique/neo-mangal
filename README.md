@@ -6,11 +6,11 @@
 
 ## ✨ Features
 
-- 🌐 **Modular Lua Scrapers ([neo-mangal-scrapers](https://github.com/kalebhenrique/neo-mangal-scrapers))**: Scrapers are decoupled from the Rust core into external Lua 5.4 scripts—providing instant updates without recompiling, and concurrent multi-source search.
-- 📱 **Native Kindle Optimization**: Direct conversion to Kindle KF8 (`.azw3`) at 300 PPI via Kindle Comic Converter (KCC)
-- 📖 **Unified Download Pipeline**: Flexible output targeting **AZW3**, **CBZ**, **EPUB**, and **MOBI**, with optional volume fusion to merge multi-chapter releases into clean single-volume archives.
-- 🖼️ **Pure-Rust Terminal Cover Preview**: High-definition cover thumbnails rendered directly in the terminal using TrueColor halfblocks with dynamic window-aware scaling—zero external C dependencies (`chafa`-free).
-- ⚡ **Modern TUI Architecture**: Built with `ratatui` and Tokio async tasks, featuring real-time progress bars, inline chapter filtering, wrap-around pagination, and clean immediate exit.
+- **Modular Lua Scrapers ([neo-mangal-scrapers](https://github.com/kalebhenrique/neo-mangal-scrapers))**: Scrapers are decoupled from the Rust core into external Lua 5.4 scripts—providing instant updates without recompiling, and concurrent multi-source search.
+- **Native Kindle Optimization**: Direct conversion to Kindle KF8 (`.azw3`) at 300 PPI via Kindle Comic Converter (KCC)
+- **Unified Download Pipeline**: Flexible output targeting **AZW3**, **CBZ**, **EPUB**, and **MOBI**, with optional volume fusion to merge multi-chapter releases into clean single-volume archives.
+- **Pure-Rust Terminal Cover Preview**: High-definition cover thumbnails rendered directly in the terminal using TrueColor halfblocks with dynamic window-aware scaling—zero external C dependencies (`chafa`-free).
+- **Modern TUI Architecture**: Built with `ratatui` and Tokio async tasks, featuring real-time progress bars, inline chapter filtering, wrap-around pagination, and clean immediate exit.
 
 ---
 
@@ -91,25 +91,32 @@ brew install --cask font-jetbrains-mono-nerd-font
 
 ---
 
-## 🚀 Installation & Build
+## 🚀 Installation & Update
+
+### Quick Install (macOS & Linux)
+
+Install `neo-mangal` and shortcuts (`nmangal`, `neomangal`, `neo-mangal`) into `~/.local/bin`:
 
 ```bash
-# Clone the repository
-git clone git@github.com:kalebhenrique/neo-mangal.git
-cd neo-mangal
-
-# Run test suite (20 unit & integration tests)
-cargo test
-
-# Launch neo-mangal
-cargo run
+curl -fsSL https://raw.githubusercontent.com/kalebhenrique/neo-mangal/main/install.sh | sh
 ```
 
-Or build an optimized release binary:
+### Updating
+
+To update `neo-mangal` to the latest version at any time, run:
 
 ```bash
-cargo build --release
-./target/release/neo-mangal
+nmangal update
+```
+
+---
+
+### Build from Source with make
+
+```bash
+git clone git@github.com:kalebhenrique/neo-mangal.git
+cd neo-mangal
+make install
 ```
 
 ---
