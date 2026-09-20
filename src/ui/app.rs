@@ -1111,6 +1111,9 @@ impl App {
                     let output_dir = config.download_dir.join(&sanitized_manga);
                     match KccRunner::convert(&cbz_path, &output_dir, &config, Some(kcc_tx)).await {
                         Ok(final_path) => {
+                            if final_path != cbz_path {
+                                let _ = fs::remove_file(&cbz_path);
+                            }
                             let _ = tx.send(AppEvent::ChapterDownloaded {
                                 manga_url: manga.url.clone(),
                                 chapter_title: chapter.title.clone(),
@@ -1286,6 +1289,9 @@ impl App {
                 let output_dir = config.download_dir.join(&sanitized_manga);
                 match KccRunner::convert(&cbz_path, &output_dir, &config, Some(kcc_tx)).await {
                     Ok(final_path) => {
+                        if final_path != cbz_path {
+                            let _ = fs::remove_file(&cbz_path);
+                        }
                         let _ = tx.send(AppEvent::ChapterDownloaded {
                             manga_url: manga.url.clone(),
                             chapter_title: last_chapter_name.clone(),

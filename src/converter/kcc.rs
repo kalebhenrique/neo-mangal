@@ -40,6 +40,26 @@ impl KccRunner {
                 cmd.arg("-m");
             }
 
+            if config.kcc_stretch {
+                cmd.arg("-s");
+            }
+
+            if config.kcc_upscale {
+                cmd.arg("-u");
+            }
+
+            if config.kcc_smart_cover_crop {
+                cmd.arg("--smartcovercrop");
+            }
+
+            if config.kcc_cover_fill {
+                cmd.arg("--coverfill");
+            }
+
+            if config.kcc_splitter > 0 {
+                cmd.arg("-r").arg(config.kcc_splitter.to_string());
+            }
+
             cmd.arg(cbz_path);
 
             cmd.stdout(Stdio::piped());

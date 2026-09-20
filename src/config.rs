@@ -7,6 +7,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_splitter() -> u8 {
+    2
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub download_dir: PathBuf,
@@ -19,6 +23,16 @@ pub struct Config {
     pub rename_to_azw3: bool,
     #[serde(default)]
     pub active_sources: Vec<String>,
+    #[serde(default = "default_true")]
+    pub kcc_stretch: bool,
+    #[serde(default = "default_true")]
+    pub kcc_upscale: bool,
+    #[serde(default = "default_true")]
+    pub kcc_smart_cover_crop: bool,
+    #[serde(default = "default_true")]
+    pub kcc_cover_fill: bool,
+    #[serde(default = "default_splitter")]
+    pub kcc_splitter: u8,
 }
 
 impl Default for Config {
@@ -33,6 +47,11 @@ impl Default for Config {
             concurrent_downloads: 4,
             rename_to_azw3: true,
             active_sources: Vec::new(),
+            kcc_stretch: true,
+            kcc_upscale: true,
+            kcc_smart_cover_crop: true,
+            kcc_cover_fill: true,
+            kcc_splitter: 2,
         }
     }
 }
@@ -167,6 +186,11 @@ mod tests {
         assert!(config.rename_to_azw3);
         assert!(config.kcc_manga_style);
         assert!(!config.download_dir.as_os_str().is_empty());
+        assert!(config.kcc_stretch);
+        assert!(config.kcc_upscale);
+        assert!(config.kcc_smart_cover_crop);
+        assert!(config.kcc_cover_fill);
+        assert_eq!(config.kcc_splitter, 2);
     }
 
     #[test]
