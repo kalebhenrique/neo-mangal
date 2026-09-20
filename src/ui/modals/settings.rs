@@ -21,6 +21,7 @@ pub struct SettingsModal {
     pub language: String,
     pub profile: String,
     pub format: String,
+    pub is_editing_path: bool,
     autocomplete_state: Option<AutocompleteState>,
 }
 
@@ -31,6 +32,7 @@ impl SettingsModal {
             language: config.language.clone(),
             profile: config.kcc_profile.clone(),
             format: config.kcc_format.clone(),
+            is_editing_path: false,
             autocomplete_state: None,
         }
     }
@@ -209,14 +211,30 @@ impl SettingsModal {
         frame.render_widget(block, modal_area);
 
         // 1. Output directory input
+        let (title_suffix, border_style, show_cursor) = if self.is_editing_path {
+            let label = match lang {
+                AppLanguage::English => " [EDITING - Esc/Enter to finish] ",
+                AppLanguage::Portuguese => " [EDITANDO - Esc/Enter para concluir] ",
+            };
+            (label, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD), true)
+        } else {
+            let label = match lang {
+                AppLanguage::English => " [/ to edit] ",
+                AppLanguage::Portuguese => " [/ para editar] ",
+            };
+            (label, Style::default().fg(Color::DarkGray), false)
+        };
+
         let path_block = Block::default()
             .borders(Borders::ALL)
-            .title(I18n::download_dir_title(lang))
-            .border_style(Style::default().fg(Color::Cyan));
-        let path_text = Line::from(vec![
-            Span::styled(&self.input_path, Style::default().fg(Color::White)),
-            Span::styled("█", Style::default().fg(Color::Yellow)),
-        ]);
+            .title(format!("{}{}", I18n::download_dir_title(lang), title_suffix))
+            .border_style(border_style);
+
+        let mut path_spans = vec![Span::styled(&self.input_path, Style::default().fg(Color::White))];
+        if show_cursor {
+            path_spans.push(Span::styled("█", Style::default().fg(Color::Yellow)));
+        }
+        let path_text = Line::from(path_spans);
         frame.render_widget(Paragraph::new(path_text).block(path_block), chunks[0]);
 
         // 2. Directory validation hint
@@ -284,7 +302,39 @@ impl SettingsModal {
         );
 
         // 5. Instructions
-        let instructions_data = I18n::settings_instructions(lang);
+        let instructions_data: Vec<(&'static str, &'static str)> = if self.is_editing_path {
+            match lang {
+                AppLanguage::English => vec![
+                    ("[Tab] ", "Autocomplete   "),
+                    ("[Enter] ", "Done   "),
+                    ("[Esc] ", "Cancel"),
+                ],
+                AppLanguage::Portuguese => vec![
+                    ("[Tab] ", "Autocompletar   "),
+                    ("[Enter] ", "Concluir   "),
+                    ("[Esc] ", "Cancelar"),
+                ],
+            }
+        } else {
+            match lang {
+                AppLanguage::English => vec![
+                    ("[/] ", "Edit Path   "),
+                    ("[p] ", "Kindle Model   "),
+                    ("[o] ", "Format   "),
+                    ("[l] ", "Language   "),
+                    ("[Enter] ", "Save & Close   "),
+                    ("[Esc] ", "Close"),
+                ],
+                AppLanguage::Portuguese => vec![
+                    ("[/] ", "Editar Pasta   "),
+                    ("[p] ", "Modelo Kindle   "),
+                    ("[o] ", "Formato   "),
+                    ("[l] ", "Idioma   "),
+                    ("[Enter] ", "Salvar e Fechar   "),
+                    ("[Esc] ", "Fechar"),
+                ],
+            }
+        };
         let spans: Vec<Span> = instructions_data
             .into_iter()
             .flat_map(|(key, desc)| {

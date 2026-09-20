@@ -349,38 +349,52 @@ impl App {
         // 1. Delegate to active modal if any
         if let Some(ref mut modal) = self.active_modal {
             match modal {
-                ModalState::Settings(s) => match key.code {
-                    KeyCode::Esc | KeyCode::Enter => {
-                        let new_path = s.input_path.trim();
-                        if !new_path.is_empty() {
-                            let _ = self.config.update_download_dir(new_path);
+                ModalState::Settings(s) => {
+                    if s.is_editing_path {
+                        match key.code {
+                            KeyCode::Esc | KeyCode::Enter => {
+                                s.is_editing_path = false;
+                            }
+                            KeyCode::Tab => {
+                                s.autocomplete_path();
+                            }
+                            KeyCode::Backspace => {
+                                s.handle_backspace();
+                            }
+                            KeyCode::Char(c) => {
+                                s.handle_char(c);
+                            }
+                            _ => {}
                         }
-                        self.config.language = s.language.clone();
-                        self.config.kcc_profile = s.profile.clone();
-                        self.config.kcc_format = s.format.clone();
-                        let _ = self.config.save();
-                        self.active_modal = None;
+                    } else {
+                        match key.code {
+                            KeyCode::Esc | KeyCode::Enter => {
+                                let new_path = s.input_path.trim();
+                                if !new_path.is_empty() {
+                                    let _ = self.config.update_download_dir(new_path);
+                                }
+                                self.config.language = s.language.clone();
+                                self.config.kcc_profile = s.profile.clone();
+                                self.config.kcc_format = s.format.clone();
+                                let _ = self.config.save();
+                                self.active_modal = None;
+                            }
+                            KeyCode::Char('/') => {
+                                s.is_editing_path = true;
+                            }
+                            KeyCode::Char('p') | KeyCode::Char('P') => {
+                                s.cycle_profile();
+                            }
+                            KeyCode::Char('o') | KeyCode::Char('O') => {
+                                s.cycle_format();
+                            }
+                            KeyCode::Char('l') | KeyCode::Char('L') => {
+                                s.cycle_language();
+                            }
+                            _ => {}
+                        }
                     }
-                    KeyCode::Tab => {
-                        s.autocomplete_path();
-                    }
-                    KeyCode::Char('p') => {
-                        s.cycle_profile();
-                    }
-                    KeyCode::Char('o') => {
-                        s.cycle_format();
-                    }
-                    KeyCode::Char('l') => {
-                        s.cycle_language();
-                    }
-                    KeyCode::Backspace => {
-                        s.handle_backspace();
-                    }
-                    KeyCode::Char(c) => {
-                        s.handle_char(c);
-                    }
-                    _ => {}
-                },
+                }
                 ModalState::Process(p) => match key.code {
                     KeyCode::Esc => {
                         self.config.kcc_format = p.format.clone();
