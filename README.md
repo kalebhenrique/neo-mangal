@@ -1,6 +1,6 @@
-# neo-mangal ⚡
+# neomangal ⚡
 
-`neo-mangal` is an **aggressive refactor and modern reimagining** of the original [mangal](https://github.com/metafates/mangal) by **metafates**, rewritten from the ground up in Rust. It pairs with [**neo-mangal-scrapers**](https://github.com/kalebhenrique/neo-mangal-scrapers) — an external Lua scraper repository — to actively maintain, revitalize, and advance the terminal manga reading and Kindle conversion experience with zero friction.
+`neomangal` is an **aggressive refactor and modern reimagining** of the original [mangal](https://github.com/metafates/mangal) by **metafates**, rewritten from the ground up in Rust. It pairs with [**neo-mangal-scrapers**](https://github.com/kalebhenrique/neo-mangal-scrapers) — an external Lua scraper repository — to actively maintain, revitalize, and advance the terminal manga reading and Kindle conversion experience with zero friction.
 
 ---
 
@@ -16,7 +16,7 @@
 
 ## 🌐 Manga Sources & Lua Scrapers Engine
 
-`neo-mangal` delegates all web scraping logic to [**kalebhenrique/neo-mangal-scrapers**](https://github.com/kalebhenrique/neo-mangal-scrapers), powered by an embedded Lua 5.4 runtime (`mlua`).
+`neomangal` delegates all web scraping logic to [**kalebhenrique/neo-mangal-scrapers**](https://github.com/kalebhenrique/neo-mangal-scrapers), powered by an embedded Lua 5.4 runtime (`mlua`).
 
 ```
 neo-mangal (Rust Core)
