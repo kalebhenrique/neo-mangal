@@ -1,0 +1,37 @@
+[package]
+name = "neo-mangal"
+version = "0.1.0"
+edition = "2021"
+authors = ["kaleb"]
+description = "Modern, blazing fast Manga TUI downloader and KCC processor in Rust"
+license = "MIT"
+
+[dependencies]
+# TUI & Terminal
+ratatui = "0.29"
+crossterm = { version = "0.28", features = ["event-stream"] }
+
+# Async runtime & HTTP
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "blocking"] }
+scraper = "0.22"
+futures = "0.3"
+url = "2.5"
+urlencoding = "2.1"
+
+# Serialização & Config
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+dirs = "5.0"
+
+# Arquivos, Compactação & Shell
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+walkdir = "2.5"
+which = "6.0"
+regex = "1.11"
+thiserror = "2.0"
+anyhow = "1.0"
+image = "0.25.10"
+mlua = { version = "0.12.1", features = ["lua54", "vendored"] }
