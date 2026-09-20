@@ -17,6 +17,8 @@ pub struct Config {
     pub concurrent_downloads: usize,
     #[serde(default = "default_true")]
     pub rename_to_azw3: bool,
+    #[serde(default)]
+    pub active_sources: Vec<String>,
 }
 
 impl Default for Config {
@@ -30,6 +32,7 @@ impl Default for Config {
             kcc_manga_style: true,
             concurrent_downloads: 4,
             rename_to_azw3: true,
+            active_sources: Vec::new(),
         }
     }
 }

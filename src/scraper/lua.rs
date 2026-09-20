@@ -51,12 +51,18 @@ impl LuaScraper {
         for pair in res.sequence_values::<Table>() {
             if let Ok(t) = pair {
                 let name: String = t.get("name").unwrap_or_default();
+                let clean_name = name
+                    .lines()
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ");
                 let url: String = t.get("url").unwrap_or_default();
                 let cover: Option<String> = t.get("cover").ok();
-                if !name.is_empty() && !url.is_empty() {
+                if !clean_name.is_empty() && !url.is_empty() {
                     mangas.push(Manga {
                         id: url.clone(),
-                        title: name,
+                        title: clean_name,
                         url,
                         cover_url: cover,
                         provider: self.name.clone(),
@@ -82,12 +88,13 @@ impl LuaScraper {
         for pair in res.sequence_values::<Table>() {
             if let Ok(t) = pair {
                 let name: String = t.get("name").unwrap_or_default();
+                let clean_name = crate::domain::favorite::FavoriteManager::clean_chapter_title(&name);
                 let url: String = t.get("url").unwrap_or_default();
-                if !name.is_empty() && !url.is_empty() {
+                if !clean_name.is_empty() && !url.is_empty() {
                     chapters.push(Chapter {
                         id: url.clone(),
                         manga_id: manga_url.to_string(),
-                        title: name,
+                        title: clean_name,
                         url,
                         number: None,
                     });

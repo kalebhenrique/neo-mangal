@@ -220,6 +220,9 @@ mod tests {
         let results = mangas.unwrap();
         assert!(!results.is_empty(), "Should find at least 1 manga for Naruto");
         assert!(results[0].title.to_lowercase().contains("naruto"));
+        for m in &results {
+            assert_ne!(m.title.to_lowercase(), "official", "Title must not be 'Official'");
+        }
 
         // Live test MangaDex Lua scraper loading & query (if network available)
         let mangadex = SourceManager::load_source("MangaDex");
