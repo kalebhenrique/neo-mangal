@@ -12,6 +12,7 @@ use tokio::sync::mpsc;
 use crate::config::Config;
 use crate::converter::cbz::CbzPacker;
 use crate::converter::kcc::KccRunner;
+use crate::converter::pdf::PdfPacker;
 use crate::converter::toolchain::ToolchainStatus;
 use crate::domain::favorite::{FavoriteManga, FavoriteManager};
 use crate::domain::job::JobStatus;
@@ -27,8 +28,9 @@ use crate::anilist::AnilistClient;
 use crate::scraper::manager::SourceManager;
 use crate::ui::events::AppEvent;
 use crate::ui::modals::{
-    AlertModal, AnilistModal, ConfirmRemoveModal, InstallSourcesModal, KccMissingModal, ProcessModal,
-    SettingsModal, SourceSelectModal,
+    AlertModal, AnilistModal, AnilistStep, ConfirmMarkReadModal, ConfirmRemoveModal, EditPathModal,
+    HelpModal, InstallSourcesModal, KccMissingModal, ProcessModal, SettingsAction, SettingsModal,
+    SettingItem, SourceSelectModal,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -43,6 +45,9 @@ pub enum CurrentView {
 pub enum ModalState {
     Settings(SettingsModal),
     Anilist(AnilistModal),
+    EditPath(EditPathModal),
+    ConfirmMarkRead(ConfirmMarkReadModal),
+    Help(HelpModal),
     Process(ProcessModal),
     KccMissing(KccMissingModal),
     Alert(AlertModal),
@@ -334,11 +339,16 @@ impl App {
             for c in text.chars() {
                 modal.handle_char(c);
             }
+        } else if let Some(ModalState::EditPath(ref mut modal)) = self.active_modal {
+            for c in text.chars() {
+                modal.handle_char(c);
+            }
         }
     }
 
     /// Handles keyboard events based on active modal or current view
     fn handle_key(&mut self, key: KeyEvent) {
+        let lang = self.current_language();
         // Global quit on Ctrl+C or Ctrl+Q
         if key.modifiers.contains(KeyModifiers::CONTROL)
             && (key.code == KeyCode::Char('c') || key.code == KeyCode::Char('q'))
@@ -372,94 +382,161 @@ impl App {
         if let Some(ref mut modal) = self.active_modal {
             match modal {
                 ModalState::Settings(s) => {
-                    if s.is_editing_path {
-                        match key.code {
-                            KeyCode::Esc | KeyCode::Enter => {
-                                s.is_editing_path = false;
-                            }
-                            KeyCode::Tab => {
-                                s.autocomplete_path();
-                            }
-                            KeyCode::Backspace => {
-                                s.handle_backspace();
-                            }
-                            KeyCode::Char(c) => {
-                                s.handle_char(c);
-                            }
-                            _ => {}
+                    match key.code {
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            s.prev_item();
                         }
-                    } else {
-                        match key.code {
-                            KeyCode::Esc | KeyCode::Enter => {
-                                let new_path = s.input_path.trim();
-                                if !new_path.is_empty() {
-                                    let _ = self.config.update_download_dir(new_path);
-                                }
-                                self.config.language = s.language.clone();
-                                self.config.kcc_profile = s.profile.clone();
-                                self.config.kcc_format = s.format.clone();
-                                let _ = self.config.save();
-                                self.active_modal = None;
-                            }
-                            KeyCode::Char('/') => {
-                                s.is_editing_path = true;
-                            }
-                            KeyCode::Char('p') | KeyCode::Char('P') => {
-                                s.cycle_profile();
-                            }
-                            KeyCode::Char('o') | KeyCode::Char('O') => {
-                                s.cycle_format();
-                            }
-                            KeyCode::Char('l') | KeyCode::Char('L') => {
-                                s.cycle_language();
-                            }
-                            KeyCode::Char('a') | KeyCode::Char('A') => {
-                                self.active_modal = Some(ModalState::Anilist(AnilistModal::new()));
-                            }
-                            KeyCode::Char('t') | KeyCode::Char('T') => {
-                                s.toggle_sync_on_download();
-                                self.config.anilist_sync_on_download = s.anilist_sync_on_download;
-                                let _ = self.config.save();
-                                let msg = if s.anilist_sync_on_download {
-                                    "AniList auto-sync on download: ENABLED"
-                                } else {
-                                    "AniList auto-sync on download: DISABLED"
-                                };
-                                self.job_status = JobStatus::Done(msg.to_string());
-                            }
-                            KeyCode::Char('d') | KeyCode::Char('D') => {
-                                if self.config.anilist_username.is_some() {
-                                    self.config.anilist_token = None;
-                                    self.config.anilist_username = None;
-                                    self.config.anilist_enabled = false;
-                                    let _ = self.config.save();
-                                    s.anilist_username = None;
-                                    s.anilist_enabled = false;
-                                    self.job_status = JobStatus::Done("AniList disconnected".to_string());
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            s.next_item();
+                        }
+                        KeyCode::Left | KeyCode::Char('h') => {
+                            s.handle_left();
+                        }
+                        KeyCode::Right | KeyCode::Char('l') => {
+                            s.handle_right();
+                        }
+                        KeyCode::Char(' ') => {
+                            if let Some(action) = s.handle_space() {
+                                match action {
+                                    SettingsAction::EditDownloadPath => {
+                                        self.config.language = s.language.clone();
+                                        self.config.kcc_profile = s.profile.clone();
+                                        self.config.kcc_format = s.format.clone();
+                                        self.config.anilist_sync_on_download = s.anilist_sync_on_download;
+                                        let _ = self.config.save();
+                                        self.active_modal = Some(ModalState::EditPath(EditPathModal::new(&s.input_path)));
+                                    }
+                                    SettingsAction::OpenAnilist => {
+                                        self.active_modal = Some(ModalState::Anilist(AnilistModal::new()));
+                                    }
+                                    SettingsAction::DisconnectAnilist => {
+                                        self.config.anilist_token = None;
+                                        self.config.anilist_username = None;
+                                        self.config.anilist_enabled = false;
+                                        let _ = self.config.save();
+                                    }
                                 }
                             }
-                            _ => {}
                         }
+                        KeyCode::Enter => {
+                            if let Some(action) = s.handle_enter() {
+                                match action {
+                                    SettingsAction::EditDownloadPath => {
+                                        self.config.language = s.language.clone();
+                                        self.config.kcc_profile = s.profile.clone();
+                                        self.config.kcc_format = s.format.clone();
+                                        self.config.anilist_sync_on_download = s.anilist_sync_on_download;
+                                        let _ = self.config.save();
+                                        self.active_modal = Some(ModalState::EditPath(EditPathModal::new(&s.input_path)));
+                                    }
+                                    SettingsAction::OpenAnilist => {
+                                        self.active_modal = Some(ModalState::Anilist(AnilistModal::new()));
+                                    }
+                                    SettingsAction::DisconnectAnilist => {
+                                        self.config.anilist_token = None;
+                                        self.config.anilist_username = None;
+                                        self.config.anilist_enabled = false;
+                                        let _ = self.config.save();
+                                    }
+                                }
+                            }
+                        }
+                        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+                            let new_path = s.input_path.trim();
+                            if !new_path.is_empty() {
+                                let _ = self.config.update_download_dir(new_path);
+                            }
+                            self.config.language = s.language.clone();
+                            self.config.kcc_profile = s.profile.clone();
+                            self.config.kcc_format = s.format.clone();
+                            self.config.anilist_sync_on_download = s.anilist_sync_on_download;
+                            let _ = self.config.save();
+                            self.active_modal = None;
+                        }
+                        _ => {}
                     }
                 }
-                ModalState::Anilist(a) => match key.code {
-                    KeyCode::Esc => {
-                        self.active_modal = Some(ModalState::Settings(SettingsModal::new(&self.config)));
-                    }
+                ModalState::EditPath(p) => match key.code {
                     KeyCode::Tab => {
-                        AnilistModal::open_browser();
+                        p.autocomplete_path();
                     }
+                    KeyCode::Backspace => {
+                        p.handle_backspace();
+                    }
+                    KeyCode::Char(c) => {
+                        p.handle_char(c);
+                    }
+                    KeyCode::Enter => {
+                        let new_path = p.input_path.trim().to_string();
+                        if !new_path.is_empty() {
+                            let _ = self.config.update_download_dir(&new_path);
+                            let _ = self.config.save();
+                        }
+                        let mut settings = SettingsModal::new(&self.config);
+                        settings.selected_item = SettingItem::DownloadDir;
+                        self.active_modal = Some(ModalState::Settings(settings));
+                    }
+                    KeyCode::Esc => {
+                        let mut settings = SettingsModal::new(&self.config);
+                        settings.selected_item = SettingItem::DownloadDir;
+                        self.active_modal = Some(ModalState::Settings(settings));
+                    }
+                    _ => {}
+                },
+                ModalState::Anilist(a) => match key.code {
+                    KeyCode::Esc => match a.step {
+                        AnilistStep::ClientId => {
+                            self.active_modal = Some(ModalState::Settings(SettingsModal::new(&self.config)));
+                        }
+                        AnilistStep::Token => {
+                            a.step = AnilistStep::ClientId;
+                            a.status_msg = None;
+                        }
+                    },
                     KeyCode::Backspace => {
                         a.handle_backspace();
                     }
                     KeyCode::Char(c) => {
                         a.handle_char(c);
                     }
-                    KeyCode::Enter => {
-                        let token = a.input_token.trim().to_string();
-                        if token.is_empty() {
-                            a.status_msg = Some(("Token cannot be empty".to_string(), ratatui::style::Color::Red));
-                        } else {
+                    KeyCode::Enter => match a.step {
+                        AnilistStep::ClientId => {
+                            let id = a.client_id.trim();
+                            if id.is_empty() {
+                                return;
+                            }
+                            a.open_auth_browser();
+                            a.step = AnilistStep::Token;
+                            a.status_msg = Some((
+                                match lang {
+                                    AppLanguage::English => "Browser opened! Click Authorize and paste the generated token below.".to_string(),
+                                    AppLanguage::Portuguese => "Navegador aberto! Clique em Authorize e cole o token gerado abaixo.".to_string(),
+                                },
+                                ratatui::style::Color::Green,
+                            ));
+                        }
+                        AnilistStep::Token => {
+                            let raw = a.token.trim().to_string();
+                            if raw.is_empty() {
+                                a.status_msg = Some((
+                                    match lang {
+                                        AppLanguage::English => "Token cannot be empty. Paste the token generated in your browser!".to_string(),
+                                        AppLanguage::Portuguese => "Token não pode ser vazio. Cole o token gerado no navegador!".to_string(),
+                                    },
+                                    ratatui::style::Color::Red,
+                                ));
+                                return;
+                            }
+
+                            // Extract token if user pasted the full URL or query parameter
+                            let token = if let Some(idx) = raw.find("access_token=") {
+                                let after = &raw[idx + "access_token=".len()..];
+                                let end = after.find('&').unwrap_or(after.len());
+                                after[..end].trim().to_string()
+                            } else {
+                                raw
+                            };
+
                             a.is_loading = true;
                             a.status_msg = None;
                             let tx = self.event_tx.clone();
@@ -474,9 +551,9 @@ impl App {
                                 }
                             });
                         }
-                    }
+                    },
                     _ => {}
-                }
+                },
                 ModalState::Process(p) => match key.code {
                     KeyCode::Esc => {
                         self.config.kcc_format = p.format.clone();
@@ -621,7 +698,79 @@ impl App {
                     }
                     _ => {}
                 },
+                ModalState::ConfirmMarkRead(modal) => match key.code {
+                    KeyCode::Enter
+                    | KeyCode::Char('y')
+                    | KeyCode::Char('Y')
+                    | KeyCode::Char('s')
+                    | KeyCode::Char('S') => {
+                        let manga_name = modal.manga_title.clone();
+                        let chapter_idx = modal.chapter_number.floor() as i32;
+                        let chapter_title = modal.chapter_title.clone();
+                        let token = modal.token.clone();
+                        let tx = self.event_tx.clone();
+                        self.job_status = JobStatus::ConvertingKcc {
+                            message: format!("Syncing AniList: Ch. {}...", chapter_idx),
+                        };
+                        tokio::spawn(async move {
+                            match AnilistClient::search_manga(&manga_name).await {
+                                Ok(Some(media_id)) => {
+                                    match AnilistClient::update_progress(&token, media_id, chapter_idx).await {
+                                        Ok(_) => {
+                                            let _ = tx.send(AppEvent::OperationSuccess(format!(
+                                                "AniList: Marked read up to Ch. {} ({})",
+                                                chapter_idx, chapter_title
+                                            )));
+                                        }
+                                        Err(e) => {
+                                            let _ = tx.send(AppEvent::OperationError(format!(
+                                                "AniList sync failed: {}", e
+                                            )));
+                                        }
+                                    }
+                                }
+                                Ok(None) => {
+                                    let _ = tx.send(AppEvent::OperationError(format!(
+                                        "Manga \"{}\" not found on AniList", manga_name
+                                    )));
+                                }
+                                Err(e) => {
+                                    let _ = tx.send(AppEvent::OperationError(format!(
+                                        "AniList search failed: {}", e
+                                    )));
+                                }
+                            }
+                        });
+                        self.active_modal = None;
+                    }
+                    KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                        self.active_modal = None;
+                    }
+                    _ => {}
+                },
+                ModalState::Help(_) => match key.code {
+                    KeyCode::Esc | KeyCode::Enter | KeyCode::Char('?') | KeyCode::Char('q') | KeyCode::Char('Q') => {
+                        self.active_modal = None;
+                    }
+                    _ => {}
+                },
             }
+            return;
+        }
+
+        // Global help shortcut: '?' available from any browsing screen
+        if key.code == KeyCode::Char('?')
+            && self.current_view != CurrentView::Search
+            && !(self.current_view == CurrentView::ChapterList && self.is_chapter_filter_active)
+        {
+            let view_str = match self.current_view {
+                CurrentView::Favorites => "favorites",
+                CurrentView::SearchUnfocused => "search_unfocused",
+                CurrentView::MangaResults => "manga_list",
+                CurrentView::ChapterList => "chapter_list",
+                _ => "favorites",
+            };
+            self.active_modal = Some(ModalState::Help(HelpModal::new(view_str)));
             return;
         }
 
@@ -902,52 +1051,36 @@ impl App {
                                 }
                             }
                         }
-                        // Mark as read on AniList up to selected chapter
+                        // Mark as read on AniList up to selected chapter (with confirmation modal)
                         KeyCode::Char('m') | KeyCode::Char('M') => {
                             let page_chapters = self.current_page_chapters();
                             if let Some(idx) = self.chapter_list_state.selected() {
                                 if let Some(ch) = page_chapters.get(idx) {
                                     if let Some(ref manga) = self.selected_manga {
                                         if let Some(ref token) = self.config.anilist_token {
-                                            let manga_name = manga.title.clone();
-                                            let chapter_idx = ch.number.unwrap_or(1.0).floor() as i32;
-                                            let chapter_title = ch.title.clone();
-                                            let token = token.clone();
-                                            let tx = self.event_tx.clone();
-                                            self.job_status = JobStatus::ConvertingKcc {
-                                                message: format!("Syncing AniList: Ch. {}...", chapter_idx),
-                                            };
-                                            tokio::spawn(async move {
-                                                match AnilistClient::search_manga(&manga_name).await {
-                                                    Ok(Some(media_id)) => {
-                                                        match AnilistClient::update_progress(&token, media_id, chapter_idx).await {
-                                                            Ok(_) => {
-                                                                let _ = tx.send(AppEvent::OperationSuccess(format!(
-                                                                    "AniList: Marked read up to Ch. {} ({})",
-                                                                    chapter_idx, chapter_title
-                                                                )));
-                                                            }
-                                                            Err(e) => {
-                                                                let _ = tx.send(AppEvent::OperationError(format!(
-                                                                    "AniList sync failed: {}", e
-                                                                )));
-                                                            }
-                                                        }
-                                                    }
-                                                    Ok(None) => {
-                                                        let _ = tx.send(AppEvent::OperationError(format!(
-                                                            "Manga \"{}\" not found on AniList", manga_name
-                                                        )));
-                                                    }
-                                                    Err(e) => {
-                                                        let _ = tx.send(AppEvent::OperationError(format!(
-                                                            "AniList search failed: {}", e
-                                                        )));
-                                                    }
-                                                }
-                                            });
+                                            let chapter_num = ch.number
+                                                .or_else(|| Chapter::parse_number_from_title(&ch.title))
+                                                .unwrap_or(1.0);
+                                            self.active_modal = Some(ModalState::ConfirmMarkRead(
+                                                ConfirmMarkReadModal::new(
+                                                    &manga.title,
+                                                    chapter_num,
+                                                    &ch.title,
+                                                    token,
+                                                ),
+                                            ));
                                         } else {
-                                            self.job_status = JobStatus::Failed("AniList not connected! Press 's' then 'a' to connect.".to_string());
+                                            let (title, msg) = match lang {
+                                                AppLanguage::English => (
+                                                    "AniList Not Connected",
+                                                    "Please connect your AniList account in Settings (F2 or 's') before marking reading progress.",
+                                                ),
+                                                AppLanguage::Portuguese => (
+                                                    "AniList Não Conectado",
+                                                    "Conecte sua conta do AniList em Configurações (F2 ou 's') para marcar o progresso de leitura.",
+                                                ),
+                                            };
+                                            self.active_modal = Some(ModalState::Alert(AlertModal::new(title, msg, true)));
                                         }
                                     }
                                 }
@@ -1214,65 +1347,93 @@ impl App {
                     return;
                 }
 
-                let _ = tx.send(AppEvent::DownloadStatus(JobStatus::PackagingCbz));
-                let cbz_path = config
-                    .download_dir
-                    .join(&sanitized_manga)
-                    .join(format!("{}.cbz", sanitized_chapter));
+                if config.kcc_format.eq_ignore_ascii_case("PDF") {
+                    let _ = tx.send(AppEvent::DownloadStatus(JobStatus::PackagingPdf));
+                    let pdf_path = config
+                        .download_dir
+                        .join(&sanitized_manga)
+                        .join(format!("{}.pdf", sanitized_chapter));
 
-                let pack_res = CbzPacker::package(&temp_dir, custom_cover.as_deref(), &cbz_path);
-                // Clean up raw image folder immediately!
-                let _ = fs::remove_dir_all(&temp_dir);
+                    let pack_res = PdfPacker::package(&temp_dir, custom_cover.as_deref(), &pdf_path);
+                    let _ = fs::remove_dir_all(&temp_dir);
 
-                if let Err(e) = pack_res {
-                    let _ = tx.send(AppEvent::OperationError(format!(
-                        "CBZ Packaging failed: {}",
-                        e
-                    )));
-                    return;
-                }
-
-                if convert_kcc {
-                    let (kcc_tx, mut kcc_rx) = mpsc::channel(16);
-                    let forward_kcc_tx = tx.clone();
-                    tokio::spawn(async move {
-                        while let Some(msg) = kcc_rx.recv().await {
-                            let _ = forward_kcc_tx.send(AppEvent::KccStatus(msg));
-                        }
-                    });
-
-                    let output_dir = config.download_dir.join(&sanitized_manga);
-                    match KccRunner::convert(&cbz_path, &output_dir, &config, Some(kcc_tx)).await {
-                        Ok(final_path) => {
-                            if final_path != cbz_path {
-                                let _ = fs::remove_file(&cbz_path);
-                            }
-                            let _ = tx.send(AppEvent::ChapterDownloaded {
-                                manga_url: manga.url.clone(),
-                                chapter_title: chapter.title.clone(),
-                            });
-                            let _ = tx.send(AppEvent::OperationSuccess(format!(
-                                "Kindle output ready:\n{}",
-                                final_path.display()
-                            )));
-                        }
-                        Err(e) => {
-                            let _ = tx.send(AppEvent::OperationError(format!(
-                                "KCC Conversion failed: {}",
-                                e
-                            )));
-                            return;
-                        }
+                    if let Err(e) = pack_res {
+                        let _ = tx.send(AppEvent::OperationError(format!(
+                            "PDF Packaging failed: {}",
+                            e
+                        )));
+                        return;
                     }
-                } else {
+
                     let _ = tx.send(AppEvent::ChapterDownloaded {
                         manga_url: manga.url.clone(),
                         chapter_title: chapter.title.clone(),
                     });
                     let _ = tx.send(AppEvent::OperationSuccess(format!(
-                        "CBZ direct save complete:\n{}",
-                        cbz_path.display()
+                        "PDF save complete:\n{}",
+                        pdf_path.display()
                     )));
+                } else {
+                    let _ = tx.send(AppEvent::DownloadStatus(JobStatus::PackagingCbz));
+                    let cbz_path = config
+                        .download_dir
+                        .join(&sanitized_manga)
+                        .join(format!("{}.cbz", sanitized_chapter));
+
+                    let pack_res = CbzPacker::package(&temp_dir, custom_cover.as_deref(), &cbz_path);
+                    // Clean up raw image folder immediately!
+                    let _ = fs::remove_dir_all(&temp_dir);
+
+                    if let Err(e) = pack_res {
+                        let _ = tx.send(AppEvent::OperationError(format!(
+                            "CBZ Packaging failed: {}",
+                            e
+                        )));
+                        return;
+                    }
+
+                    if convert_kcc {
+                        let (kcc_tx, mut kcc_rx) = mpsc::channel(16);
+                        let forward_kcc_tx = tx.clone();
+                        tokio::spawn(async move {
+                            while let Some(msg) = kcc_rx.recv().await {
+                                let _ = forward_kcc_tx.send(AppEvent::KccStatus(msg));
+                            }
+                        });
+
+                        let output_dir = config.download_dir.join(&sanitized_manga);
+                        match KccRunner::convert(&cbz_path, &output_dir, &config, Some(kcc_tx)).await {
+                            Ok(final_path) => {
+                                if final_path != cbz_path {
+                                    let _ = fs::remove_file(&cbz_path);
+                                }
+                                let _ = tx.send(AppEvent::ChapterDownloaded {
+                                    manga_url: manga.url.clone(),
+                                    chapter_title: chapter.title.clone(),
+                                });
+                                let _ = tx.send(AppEvent::OperationSuccess(format!(
+                                    "Kindle output ready:\n{}",
+                                    final_path.display()
+                                )));
+                            }
+                            Err(e) => {
+                                let _ = tx.send(AppEvent::OperationError(format!(
+                                    "KCC Conversion failed: {}",
+                                    e
+                                )));
+                                return;
+                            }
+                        }
+                    } else {
+                        let _ = tx.send(AppEvent::ChapterDownloaded {
+                            manga_url: manga.url.clone(),
+                            chapter_title: chapter.title.clone(),
+                        });
+                        let _ = tx.send(AppEvent::OperationSuccess(format!(
+                            "CBZ direct save complete:\n{}",
+                            cbz_path.display()
+                        )));
+                    }
                 }
 
                 if config.anilist_enabled && config.anilist_sync_on_download {
@@ -1411,65 +1572,93 @@ impl App {
                 let _ = fs::remove_dir_all(&ch_temp);
             }
 
-            // Package into single volume CBZ
-            let _ = tx.send(AppEvent::DownloadStatus(JobStatus::PackagingCbz));
-            let cbz_path = config
-                .download_dir
-                .join(&sanitized_manga)
-                .join(format!("{}.cbz", sanitized_volume));
+            if config.kcc_format.eq_ignore_ascii_case("PDF") {
+                let _ = tx.send(AppEvent::DownloadStatus(JobStatus::PackagingPdf));
+                let pdf_path = config
+                    .download_dir
+                    .join(&sanitized_manga)
+                    .join(format!("{}.pdf", sanitized_volume));
 
-            let pack_res = CbzPacker::package(&temp_fusion_dir, volume_cover.as_deref(), &cbz_path);
-            let _ = fs::remove_dir_all(&temp_fusion_dir);
+                let pack_res = PdfPacker::package(&temp_fusion_dir, volume_cover.as_deref(), &pdf_path);
+                let _ = fs::remove_dir_all(&temp_fusion_dir);
 
-            if let Err(e) = pack_res {
-                let _ = tx.send(AppEvent::OperationError(format!(
-                    "Volume Fusion CBZ packaging failed: {}",
-                    e
-                )));
-                return;
-            }
-
-            if convert_kcc {
-                let (kcc_tx, mut kcc_rx) = mpsc::channel(16);
-                let forward_kcc_tx = tx.clone();
-                tokio::spawn(async move {
-                    while let Some(msg) = kcc_rx.recv().await {
-                        let _ = forward_kcc_tx.send(AppEvent::KccStatus(msg));
-                    }
-                });
-
-                let output_dir = config.download_dir.join(&sanitized_manga);
-                match KccRunner::convert(&cbz_path, &output_dir, &config, Some(kcc_tx)).await {
-                    Ok(final_path) => {
-                        if final_path != cbz_path {
-                            let _ = fs::remove_file(&cbz_path);
-                        }
-                        let _ = tx.send(AppEvent::ChapterDownloaded {
-                            manga_url: manga.url.clone(),
-                            chapter_title: last_chapter_name.clone(),
-                        });
-                        let _ = tx.send(AppEvent::OperationSuccess(format!(
-                            "Kindle Volume ready:\n{}",
-                            final_path.display()
-                        )));
-                    }
-                    Err(e) => {
-                        let _ = tx.send(AppEvent::OperationError(format!(
-                            "KCC Conversion failed: {}",
-                            e
-                        )));
-                        return;
-                    }
+                if let Err(e) = pack_res {
+                    let _ = tx.send(AppEvent::OperationError(format!(
+                        "Volume Fusion PDF packaging failed: {}",
+                        e
+                    )));
+                    return;
                 }
-            } else {
+
                 let _ = tx.send(AppEvent::ChapterDownloaded {
                     manga_url: manga.url.clone(),
                     chapter_title: last_chapter_name.clone(),
                 });
                 let _ = tx.send(AppEvent::OperationSuccess(format!(
                     "Volume Fusion complete!\nSaved at: {}",
-                    cbz_path.display()
+                    pdf_path.display()
                 )));
+            } else {
+                // Package into single volume CBZ
+                let _ = tx.send(AppEvent::DownloadStatus(JobStatus::PackagingCbz));
+                let cbz_path = config
+                    .download_dir
+                    .join(&sanitized_manga)
+                    .join(format!("{}.cbz", sanitized_volume));
+
+                let pack_res = CbzPacker::package(&temp_fusion_dir, volume_cover.as_deref(), &cbz_path);
+                let _ = fs::remove_dir_all(&temp_fusion_dir);
+
+                if let Err(e) = pack_res {
+                    let _ = tx.send(AppEvent::OperationError(format!(
+                        "Volume Fusion CBZ packaging failed: {}",
+                        e
+                    )));
+                    return;
+                }
+
+                if convert_kcc {
+                    let (kcc_tx, mut kcc_rx) = mpsc::channel(16);
+                    let forward_kcc_tx = tx.clone();
+                    tokio::spawn(async move {
+                        while let Some(msg) = kcc_rx.recv().await {
+                            let _ = forward_kcc_tx.send(AppEvent::KccStatus(msg));
+                        }
+                    });
+
+                    let output_dir = config.download_dir.join(&sanitized_manga);
+                    match KccRunner::convert(&cbz_path, &output_dir, &config, Some(kcc_tx)).await {
+                        Ok(final_path) => {
+                            if final_path != cbz_path {
+                                let _ = fs::remove_file(&cbz_path);
+                            }
+                            let _ = tx.send(AppEvent::ChapterDownloaded {
+                                manga_url: manga.url.clone(),
+                                chapter_title: last_chapter_name.clone(),
+                            });
+                            let _ = tx.send(AppEvent::OperationSuccess(format!(
+                                "Kindle Volume ready:\n{}",
+                                final_path.display()
+                            )));
+                        }
+                        Err(e) => {
+                            let _ = tx.send(AppEvent::OperationError(format!(
+                                "KCC Conversion failed: {}",
+                                e
+                            )));
+                            return;
+                        }
+                    }
+                } else {
+                    let _ = tx.send(AppEvent::ChapterDownloaded {
+                        manga_url: manga.url.clone(),
+                        chapter_title: last_chapter_name.clone(),
+                    });
+                    let _ = tx.send(AppEvent::OperationSuccess(format!(
+                        "Volume Fusion complete!\nSaved at: {}",
+                        cbz_path.display()
+                    )));
+                }
             }
 
             if config.anilist_enabled && config.anilist_sync_on_download {
@@ -1612,9 +1801,12 @@ impl App {
             match modal {
                 ModalState::Settings(s) => s.render(frame, area),
                 ModalState::Anilist(a) => a.render(frame, area, lang),
+                ModalState::EditPath(ep) => ep.render(frame, area, lang),
+                ModalState::ConfirmMarkRead(cmr) => cmr.render(frame, area, lang),
+                ModalState::Help(hm) => hm.render(frame, area, lang),
                 ModalState::Process(p) => p.render(frame, area, lang),
                 ModalState::KccMissing(km) => km.render(frame, area, lang),
-                ModalState::Alert(a) => a.render(frame, area),
+                ModalState::Alert(a) => a.render(frame, area, lang),
                 ModalState::InstallSources(im) => im.render(frame, area, lang),
                 ModalState::SourceSelect(ss) => ss.render(frame, area, lang),
                 ModalState::ConfirmRemove(cr) => cr.render(frame, area, lang),
@@ -1844,5 +2036,161 @@ mod tests {
         assert!(app.active_modal.is_none());
         assert_eq!(app.favorites.len(), 0);
         assert_eq!(app.current_view, CurrentView::Search);
+    }
+
+    #[test]
+    fn test_edit_path_modal_flow() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut app = App::new(Config::default(), tx);
+
+        // Open settings modal
+        app.active_modal = Some(ModalState::Settings(SettingsModal::new(&app.config)));
+
+        // DownloadDir is selected by default; press Enter to open EditPath modal
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(matches!(app.active_modal, Some(ModalState::EditPath(_))));
+
+        // In EditPath modal: type some characters
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE));
+
+        // Press Esc to cancel without saving
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(matches!(app.active_modal, Some(ModalState::Settings(_))));
+
+        // Press Enter again to open EditPath modal
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        if let Some(ModalState::EditPath(ref mut ep)) = app.active_modal {
+            ep.input_path = "/tmp/test_download".to_string();
+        }
+
+        // Press Enter to confirm path
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(matches!(app.active_modal, Some(ModalState::Settings(_))));
+        assert_eq!(app.config.download_dir, PathBuf::from("/tmp/test_download"));
+    }
+
+    #[tokio::test]
+    async fn test_confirm_mark_read_modal_flow() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut app = App::new(Config::default(), tx);
+
+        let manga = Manga {
+            id: "one-piece".into(),
+            title: "One Piece".into(),
+            url: "https://example.com/one-piece".into(),
+            cover_url: None,
+            provider: "MangaDex".into(),
+        };
+        app.selected_manga = Some(manga);
+        app.chapters = vec![
+            Chapter {
+                id: "c1".into(),
+                manga_id: "m".into(),
+                title: "Chapter 45 - The Battle".into(),
+                url: "u1".into(),
+                number: None, // Test that title parsing automatically extracts 45.0!
+            },
+        ];
+        app.chapter_list_state.select(Some(0));
+        app.current_view = CurrentView::ChapterList;
+
+        // 1. Without token, pressing 'm' shows AlertModal
+        app.handle_key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE));
+        assert!(matches!(app.active_modal, Some(ModalState::Alert(_))));
+        app.active_modal = None;
+
+        // 2. With token, pressing 'm' opens ConfirmMarkReadModal with parsed chapter number (45)
+        app.config.anilist_token = Some("valid_token".into());
+        app.handle_key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE));
+        match &app.active_modal {
+            Some(ModalState::ConfirmMarkRead(modal)) => {
+                assert_eq!(modal.manga_title, "One Piece");
+                assert_eq!(modal.chapter_number, 45.0);
+            }
+            _ => panic!("Expected ConfirmMarkRead modal"),
+        }
+
+        // 3. Pressing Esc cancels
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(app.active_modal.is_none());
+
+        // 4. Pressing 'm' and confirming with Enter executes and closes modal
+        app.handle_key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE));
+        assert!(matches!(app.active_modal, Some(ModalState::ConfirmMarkRead(_))));
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.active_modal.is_none());
+    }
+
+    #[test]
+    fn test_help_modal_flow() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut app = App::new(Config::default(), tx);
+
+        app.current_view = CurrentView::Favorites;
+
+        // 1. Pressing '?' opens Help modal
+        app.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE));
+        match &app.active_modal {
+            Some(ModalState::Help(h)) => {
+                assert_eq!(h.current_view, "favorites");
+            }
+            _ => panic!("Expected Help modal"),
+        }
+
+        // 2. Pressing '?' again closes it
+        app.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE));
+        assert!(app.active_modal.is_none());
+
+        // 3. In ChapterList view, pressing '?' opens chapter_list help
+        app.current_view = CurrentView::ChapterList;
+        app.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE));
+        match &app.active_modal {
+            Some(ModalState::Help(h)) => {
+                assert_eq!(h.current_view, "chapter_list");
+            }
+            _ => panic!("Expected Help modal for chapter_list"),
+        }
+
+        // 4. Pressing Esc closes it
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(app.active_modal.is_none());
+    }
+
+    #[test]
+    fn test_process_modal_pdf_selection() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut app = App::new(Config::default(), tx);
+        app.chapters = vec![
+            Chapter {
+                id: "c1".into(),
+                manga_id: "m".into(),
+                title: "Chapter 1".into(),
+                url: "u1".into(),
+                number: Some(1.0),
+            },
+        ];
+        app.chapter_list_state.select(Some(0));
+        app.current_view = CurrentView::ChapterList;
+
+        // Press Enter to open ProcessModal
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        match &mut app.active_modal {
+            Some(ModalState::Process(p)) => {
+                while p.format != "PDF" {
+                    p.cycle_format();
+                }
+                assert_eq!(p.format, "PDF");
+                assert!(!p.is_kcc());
+            }
+            _ => panic!("Expected Process modal"),
+        }
+
+        // Press Enter to start processing with PDF (should not trigger KccMissingModal because PDF does not need KCC)
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.active_modal.is_none());
+        assert_eq!(app.config.kcc_format, "PDF");
     }
 }

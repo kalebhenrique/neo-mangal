@@ -6,6 +6,7 @@ pub enum JobStatus {
     Idle,
     Downloading { current: usize, total: usize },
     PackagingCbz,
+    PackagingPdf,
     ConvertingKcc { message: String },
     Done(String),
     Failed(String),
@@ -16,7 +17,10 @@ impl JobStatus {
     pub fn is_active(&self) -> bool {
         matches!(
             self,
-            JobStatus::Downloading { .. } | JobStatus::PackagingCbz | JobStatus::ConvertingKcc { .. }
+            JobStatus::Downloading { .. }
+                | JobStatus::PackagingCbz
+                | JobStatus::PackagingPdf
+                | JobStatus::ConvertingKcc { .. }
         )
     }
 
@@ -27,6 +31,7 @@ impl JobStatus {
                 format!("Downloading pages: {} / {}", current, total)
             }
             JobStatus::PackagingCbz => "Packaging CBZ archive...".to_string(),
+            JobStatus::PackagingPdf => "Packaging PDF document...".to_string(),
             JobStatus::ConvertingKcc { message } => format!("KCC: {}", message),
             JobStatus::Done(msg) => format!("Completed: {}", msg),
             JobStatus::Failed(err) => format!("Failed: {}", err),

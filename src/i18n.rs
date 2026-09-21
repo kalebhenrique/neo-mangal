@@ -133,6 +133,13 @@ impl I18n {
         }
     }
 
+    pub fn progress_packaging_pdf(lang: AppLanguage) -> &'static str {
+        match lang {
+            AppLanguage::English => "Generating PDF document...",
+            AppLanguage::Portuguese => "Gerando documento PDF...",
+        }
+    }
+
     pub fn progress_converting(lang: AppLanguage, msg: &str) -> String {
         match lang {
             AppLanguage::English => format!("KCC Converting: {}", msg),

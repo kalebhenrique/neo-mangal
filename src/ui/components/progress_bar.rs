@@ -23,6 +23,7 @@ impl ProgressBarComponent {
                 (r.clamp(0.0, 1.0), I18n::progress_downloading(lang, *current, *total, pct), Color::Cyan)
             }
             JobStatus::PackagingCbz => (0.75, I18n::progress_packaging(lang).to_string(), Color::Yellow),
+            JobStatus::PackagingPdf => (0.75, I18n::progress_packaging_pdf(lang).to_string(), Color::Yellow),
             JobStatus::ConvertingKcc { message } => (0.90, I18n::progress_converting(lang, message), Color::Magenta),
             JobStatus::Done(msg) => (1.0, I18n::progress_done(lang, msg), Color::Green),
             JobStatus::Failed(err) => (1.0, I18n::progress_error(lang, err), Color::Red),
