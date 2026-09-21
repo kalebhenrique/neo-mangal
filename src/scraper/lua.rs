@@ -91,12 +91,18 @@ impl LuaScraper {
                 let clean_name = crate::domain::favorite::FavoriteManager::clean_chapter_title(&name);
                 let url: String = t.get("url").unwrap_or_default();
                 if !clean_name.is_empty() && !url.is_empty() {
+                    let number = t.get::<f32>("number")
+                        .ok()
+                        .or_else(|| t.get::<String>("number").ok().and_then(|s| s.parse::<f32>().ok()))
+                        .or_else(|| Chapter::parse_number_from_title(&clean_name))
+                        .or_else(|| Chapter::parse_number_from_title(&name));
+
                     chapters.push(Chapter {
                         id: url.clone(),
                         manga_id: manga_url.to_string(),
                         title: clean_name,
                         url,
-                        number: None,
+                        number,
                     });
                 }
             }
