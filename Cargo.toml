@@ -1,6 +1,6 @@
 [package]
 name = "neo-mangal"
-version = "0.1.4"
+version = "1.0.0"
 edition = "2021"
 authors = ["kaleb"]
 description = "Modern, blazing fast Manga TUI downloader and KCC processor in Rust"
@@ -35,3 +35,4 @@ thiserror = "2.0"
 anyhow = "1.0"
 image = "0.25.10"
 mlua = { version = "0.12.1", features = ["lua54", "vendored"] }
+pdf-writer = "0.15.0"
