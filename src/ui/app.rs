@@ -587,7 +587,7 @@ impl App {
                         let _ = self.config.save();
 
                         if is_kcc {
-                            let status = ToolchainStatus::check();
+                            let status = ToolchainStatus::check_with_custom(self.config.kindlegen_path.as_deref());
                             if !status.is_ready() {
                                 self.active_modal = Some(ModalState::KccMissing(KccMissingModal::new(status)));
                                 return;
@@ -1251,7 +1251,7 @@ impl App {
             format!("Volume ({} chapters)", count)
         };
 
-        let toolchain = ToolchainStatus::check();
+        let toolchain = ToolchainStatus::check_with_custom(self.config.kindlegen_path.as_deref());
         let default_kcc = toolchain.is_ready();
 
         self.active_modal = Some(ModalState::Process(ProcessModal::new(

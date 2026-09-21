@@ -41,6 +41,8 @@ pub struct Config {
     pub anilist_enabled: bool,
     #[serde(default)]
     pub anilist_sync_on_download: bool,
+    #[serde(default)]
+    pub kindlegen_path: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -64,6 +66,7 @@ impl Default for Config {
             anilist_username: None,
             anilist_enabled: false,
             anilist_sync_on_download: false,
+            kindlegen_path: None,
         }
     }
 }
@@ -206,6 +209,7 @@ mod tests {
         assert_eq!(config.anilist_token, None);
         assert!(!config.anilist_enabled);
         assert!(!config.anilist_sync_on_download);
+        assert_eq!(config.kindlegen_path, None);
     }
 
     #[test]

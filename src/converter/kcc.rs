@@ -17,11 +17,21 @@ impl KccRunner {
         config: &Config,
         progress_tx: Option<mpsc::Sender<String>>,
     ) -> Result<PathBuf> {
-        let toolchain = ToolchainStatus::check();
+        let toolchain = ToolchainStatus::check_with_custom(config.kindlegen_path.as_deref());
 
         // 1. If CLI kcc-c2e is available, run full automated headless conversion
         if let Some(kcc_binary) = toolchain.kcc_cli_path {
             let mut cmd = Command::new(kcc_binary);
+
+            // Prepend kindlegen directory to PATH so kcc-c2e can always find it
+            if let Some(ref kg) = toolchain.kindlegen_path {
+                if let Some(parent) = kg.parent() {
+                    let current_path = std::env::var("PATH").unwrap_or_default();
+                    let new_path = format!("{}:{}", parent.display(), current_path);
+                    cmd.env("PATH", new_path);
+                }
+            }
+
             let kcc_arg_format = match config.kcc_format.to_uppercase().as_str() {
                 "AZW3" | "MOBI" => "MOBI",
                 "EPUB" => "EPUB",
@@ -125,34 +135,8 @@ impl KccRunner {
             let final_path = Self::post_process_kcc_output(output_dir, stem, config);
             return Ok(final_path);
         }
-
-        // 2. If kcc-c2e is not in PATH, but Kindle Comic Converter.app exists, open with app
-        if let Some(_app_path) = toolchain.kcc_app_path {
-            if let Some(ref tx) = progress_tx {
-                let _ = tx
-                    .send("Abrindo arquivo CBZ no Kindle Comic Converter.app...".to_string())
-                    .await;
-            }
-
-            let status = Command::new("open")
-                .arg("-a")
-                .arg("Kindle Comic Converter")
-                .arg(cbz_path)
-                .status()
-                .await
-                .map_err(|e| NeoError::Kcc(format!("Failed to open KCC app: {}", e)))?;
-
-            if status.success() {
-                return Ok(cbz_path.to_path_buf());
-            } else {
-                return Err(NeoError::Kcc(
-                    "Falha ao abrir o arquivo no Kindle Comic Converter.app".to_string(),
-                ));
-            }
-        }
-
         Err(NeoError::ToolchainMissing(
-            "Kindle Comic Converter não foi encontrado no sistema.".to_string(),
+            "Kindle Comic Converter CLI (kcc-c2e) não foi encontrado no sistema.".to_string(),
         ))
     }
 
