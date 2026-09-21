@@ -142,8 +142,8 @@ impl I18n {
 
     pub fn progress_converting(lang: AppLanguage, msg: &str) -> String {
         match lang {
-            AppLanguage::English => format!("KCC Converting: {}", msg),
-            AppLanguage::Portuguese => format!("Convertendo KCC: {}", msg),
+            AppLanguage::English => format!("Converting: {}", msg),
+            AppLanguage::Portuguese => format!("Convertendo: {}", msg),
         }
     }
 

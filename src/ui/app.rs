@@ -709,8 +709,12 @@ impl App {
                         let chapter_title = modal.chapter_title.clone();
                         let token = modal.token.clone();
                         let tx = self.event_tx.clone();
+                        let sync_msg = match lang {
+                            AppLanguage::English => format!("Syncing AniList: Ch. {}...", chapter_idx),
+                            AppLanguage::Portuguese => format!("Sincronizando AniList: Cap. {}...", chapter_idx),
+                        };
                         self.job_status = JobStatus::ConvertingKcc {
-                            message: format!("Syncing AniList: Ch. {}...", chapter_idx),
+                            message: sync_msg,
                         };
                         tokio::spawn(async move {
                             match AnilistClient::search_manga(&manga_name).await {
@@ -1521,9 +1525,14 @@ impl App {
             let total_ch = target_chapters.len();
             let last_chapter_number = target_chapters.last().and_then(|c| c.number);
 
+            let lang = AppLanguage::from_code(&config.language);
             for (ch_idx, chapter) in target_chapters.into_iter().enumerate() {
+                let fetch_msg = match lang {
+                    AppLanguage::English => format!("Fetching chapter {}/{}...", ch_idx + 1, total_ch),
+                    AppLanguage::Portuguese => format!("Buscando capítulo {}/{}...", ch_idx + 1, total_ch),
+                };
                 let _ = tx.send(AppEvent::DownloadStatus(JobStatus::ConvertingKcc {
-                    message: format!("Fetching chapter {}/{}...", ch_idx + 1, total_ch),
+                    message: fetch_msg,
                 }));
 
                 let chap_url = chapter.url.clone();

@@ -32,7 +32,7 @@ impl JobStatus {
             }
             JobStatus::PackagingCbz => "Packaging CBZ archive...".to_string(),
             JobStatus::PackagingPdf => "Packaging PDF document...".to_string(),
-            JobStatus::ConvertingKcc { message } => format!("KCC: {}", message),
+            JobStatus::ConvertingKcc { message } => format!("Converting: {}", message),
             JobStatus::Done(msg) => format!("Completed: {}", msg),
             JobStatus::Failed(err) => format!("Failed: {}", err),
         }

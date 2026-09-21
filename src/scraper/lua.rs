@@ -1,9 +1,9 @@
-use std::sync::Arc;
-use std::time::Duration;
-use mlua::{Lua, Table, Value};
-use scraper::{Html, Selector};
 use crate::domain::manga::{Chapter, Manga, Page};
 use crate::error::{NeoError, Result};
+use mlua::{Lua, Table, Value};
+use scraper::{Html, Selector};
+use std::sync::Arc;
+use std::time::Duration;
 
 pub struct LuaScraper {
     pub name: String,
@@ -18,7 +18,10 @@ impl LuaScraper {
             .unwrap_or("Unknown")
             .to_string();
         let code = std::fs::read_to_string(path)?;
-        Ok(Self { name, lua_code: code })
+        Ok(Self {
+            name,
+            lua_code: code,
+        })
     }
 
     #[allow(dead_code)]
@@ -32,16 +35,17 @@ impl LuaScraper {
     fn init_lua(&self) -> Result<Lua> {
         let lua = Lua::new();
         setup_lua_env(&lua)?;
-        lua.load(&self.lua_code).exec().map_err(|e| NeoError::Parse(format!("Lua compile error in {}: {}", self.name, e)))?;
+        lua.load(&self.lua_code)
+            .exec()
+            .map_err(|e| NeoError::Parse(format!("Lua compile error in {}: {}", self.name, e)))?;
         Ok(lua)
     }
 
     pub fn search(&self, query: &str) -> Result<Vec<Manga>> {
         let lua = self.init_lua()?;
-        let search_fn: mlua::Function = lua
-            .globals()
-            .get("SearchManga")
-            .map_err(|e| NeoError::Parse(format!("SearchManga not found in {}: {}", self.name, e)))?;
+        let search_fn: mlua::Function = lua.globals().get("SearchManga").map_err(|e| {
+            NeoError::Parse(format!("SearchManga not found in {}: {}", self.name, e))
+        })?;
 
         let res: Table = search_fn
             .call(query)
@@ -75,25 +79,30 @@ impl LuaScraper {
 
     pub fn chapters(&self, manga_url: &str) -> Result<Vec<Chapter>> {
         let lua = self.init_lua()?;
-        let chapters_fn: mlua::Function = lua
-            .globals()
-            .get("MangaChapters")
-            .map_err(|e| NeoError::Parse(format!("MangaChapters not found in {}: {}", self.name, e)))?;
+        let chapters_fn: mlua::Function = lua.globals().get("MangaChapters").map_err(|e| {
+            NeoError::Parse(format!("MangaChapters not found in {}: {}", self.name, e))
+        })?;
 
-        let res: Table = chapters_fn
-            .call(manga_url)
-            .map_err(|e| NeoError::Other(format!("MangaChapters failed in {}: {}", self.name, e)))?;
+        let res: Table = chapters_fn.call(manga_url).map_err(|e| {
+            NeoError::Other(format!("MangaChapters failed in {}: {}", self.name, e))
+        })?;
 
         let mut chapters = Vec::new();
         for pair in res.sequence_values::<Table>() {
             if let Ok(t) = pair {
                 let name: String = t.get("name").unwrap_or_default();
-                let clean_name = crate::domain::favorite::FavoriteManager::clean_chapter_title(&name);
+                let clean_name =
+                    crate::domain::favorite::FavoriteManager::clean_chapter_title(&name);
                 let url: String = t.get("url").unwrap_or_default();
                 if !clean_name.is_empty() && !url.is_empty() {
-                    let number = t.get::<f32>("number")
+                    let number = t
+                        .get::<f32>("number")
                         .ok()
-                        .or_else(|| t.get::<String>("number").ok().and_then(|s| s.parse::<f32>().ok()))
+                        .or_else(|| {
+                            t.get::<String>("number")
+                                .ok()
+                                .and_then(|s| s.parse::<f32>().ok())
+                        })
                         .or_else(|| Chapter::parse_number_from_title(&clean_name))
                         .or_else(|| Chapter::parse_number_from_title(&name));
 
@@ -112,10 +121,9 @@ impl LuaScraper {
 
     pub fn pages(&self, chapter_url: &str) -> Result<Vec<Page>> {
         let lua = self.init_lua()?;
-        let pages_fn: mlua::Function = lua
-            .globals()
-            .get("ChapterPages")
-            .map_err(|e| NeoError::Parse(format!("ChapterPages not found in {}: {}", self.name, e)))?;
+        let pages_fn: mlua::Function = lua.globals().get("ChapterPages").map_err(|e| {
+            NeoError::Parse(format!("ChapterPages not found in {}: {}", self.name, e))
+        })?;
 
         let res: Table = pages_fn
             .call(chapter_url)
@@ -165,7 +173,9 @@ pub fn setup_lua_env(lua: &Lua) -> Result<()> {
     .map_err(|e| NeoError::Parse(e.to_string()))?;
 
     // 2. HTTP Module
-    let http_mod = lua.create_table().map_err(|e| NeoError::Parse(e.to_string()))?;
+    let http_mod = lua
+        .create_table()
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
     http_mod
         .set(
             "request",
@@ -237,7 +247,9 @@ pub fn setup_lua_env(lua: &Lua) -> Result<()> {
         .map_err(|e| NeoError::Parse(e.to_string()))?;
 
     // 3. HTML Module
-    let html_mod = lua.create_table().map_err(|e| NeoError::Parse(e.to_string()))?;
+    let html_mod = lua
+        .create_table()
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
     html_mod
         .set(
             "parse",
@@ -247,7 +259,9 @@ pub fn setup_lua_env(lua: &Lua) -> Result<()> {
         .map_err(|e| NeoError::Parse(e.to_string()))?;
 
     // 4. HTTP Util Module
-    let http_util_mod = lua.create_table().map_err(|e| NeoError::Parse(e.to_string()))?;
+    let http_util_mod = lua
+        .create_table()
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
     http_util_mod
         .set(
             "query_escape",
@@ -260,9 +274,7 @@ pub fn setup_lua_env(lua: &Lua) -> Result<()> {
         .set(
             "query_unescape",
             lua.create_function(|_lua, s: String| {
-                let decoded = urlencoding::decode(&s)
-                    .map(|c| c.into_owned())
-                    .unwrap_or(s);
+                let decoded = urlencoding::decode(&s).map(|c| c.into_owned()).unwrap_or(s);
                 Ok(decoded)
             })
             .map_err(|e| NeoError::Parse(e.to_string()))?,
@@ -270,7 +282,9 @@ pub fn setup_lua_env(lua: &Lua) -> Result<()> {
         .map_err(|e| NeoError::Parse(e.to_string()))?;
 
     // 5. JSON Module
-    let json_mod = lua.create_table().map_err(|e| NeoError::Parse(e.to_string()))?;
+    let json_mod = lua
+        .create_table()
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
     json_mod
         .set(
             "decode",
@@ -288,7 +302,8 @@ pub fn setup_lua_env(lua: &Lua) -> Result<()> {
             "encode",
             lua.create_function(|_lua, val: Value| {
                 let j = lua_to_json(val);
-                let s = serde_json::to_string(&j).map_err(|e| mlua::Error::runtime(e.to_string()))?;
+                let s =
+                    serde_json::to_string(&j).map_err(|e| mlua::Error::runtime(e.to_string()))?;
                 Ok(s)
             })
             .map_err(|e| NeoError::Parse(e.to_string()))?,
@@ -296,7 +311,9 @@ pub fn setup_lua_env(lua: &Lua) -> Result<()> {
         .map_err(|e| NeoError::Parse(e.to_string()))?;
 
     // 6. Time Module
-    let time_mod = lua.create_table().map_err(|e| NeoError::Parse(e.to_string()))?;
+    let time_mod = lua
+        .create_table()
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
     time_mod
         .set(
             "sleep",
@@ -309,7 +326,9 @@ pub fn setup_lua_env(lua: &Lua) -> Result<()> {
         .map_err(|e| NeoError::Parse(e.to_string()))?;
 
     // 7. Strings Module
-    let strings_mod = lua.create_table().map_err(|e| NeoError::Parse(e.to_string()))?;
+    let strings_mod = lua
+        .create_table()
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
     strings_mod
         .set(
             "trim",
@@ -333,28 +352,92 @@ pub fn setup_lua_env(lua: &Lua) -> Result<()> {
         .map_err(|e| NeoError::Parse(e.to_string()))?;
 
     // Register modules as globals and preload
-    globals.set("Http", http_mod.clone()).map_err(|e| NeoError::Parse(e.to_string()))?;
-    globals.set("http", http_mod.clone()).map_err(|e| NeoError::Parse(e.to_string()))?;
-    globals.set("Html", html_mod.clone()).map_err(|e| NeoError::Parse(e.to_string()))?;
-    globals.set("html", html_mod.clone()).map_err(|e| NeoError::Parse(e.to_string()))?;
-    globals.set("HttpUtil", http_util_mod.clone()).map_err(|e| NeoError::Parse(e.to_string()))?;
-    globals.set("http_util", http_util_mod.clone()).map_err(|e| NeoError::Parse(e.to_string()))?;
-    globals.set("Json", json_mod.clone()).map_err(|e| NeoError::Parse(e.to_string()))?;
-    globals.set("json", json_mod.clone()).map_err(|e| NeoError::Parse(e.to_string()))?;
-    globals.set("Time", time_mod.clone()).map_err(|e| NeoError::Parse(e.to_string()))?;
-    globals.set("time", time_mod.clone()).map_err(|e| NeoError::Parse(e.to_string()))?;
-    globals.set("Strings", strings_mod.clone()).map_err(|e| NeoError::Parse(e.to_string()))?;
-    globals.set("strings", strings_mod.clone()).map_err(|e| NeoError::Parse(e.to_string()))?;
+    globals
+        .set("Http", http_mod.clone())
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
+    globals
+        .set("http", http_mod.clone())
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
+    globals
+        .set("Html", html_mod.clone())
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
+    globals
+        .set("html", html_mod.clone())
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
+    globals
+        .set("HttpUtil", http_util_mod.clone())
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
+    globals
+        .set("http_util", http_util_mod.clone())
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
+    globals
+        .set("Json", json_mod.clone())
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
+    globals
+        .set("json", json_mod.clone())
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
+    globals
+        .set("Time", time_mod.clone())
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
+    globals
+        .set("time", time_mod.clone())
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
+    globals
+        .set("Strings", strings_mod.clone())
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
+    globals
+        .set("strings", strings_mod.clone())
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
 
-    let package: Table = globals.get("package").map_err(|e| NeoError::Parse(e.to_string()))?;
-    let preload: Table = package.get("preload").map_err(|e| NeoError::Parse(e.to_string()))?;
+    let package: Table = globals
+        .get("package")
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
+    let preload: Table = package
+        .get("preload")
+        .map_err(|e| NeoError::Parse(e.to_string()))?;
 
-    preload.set("http", lua.create_function(move |_lua, ()| Ok(http_mod.clone())).unwrap()).unwrap();
-    preload.set("html", lua.create_function(move |_lua, ()| Ok(html_mod.clone())).unwrap()).unwrap();
-    preload.set("http_util", lua.create_function(move |_lua, ()| Ok(http_util_mod.clone())).unwrap()).unwrap();
-    preload.set("json", lua.create_function(move |_lua, ()| Ok(json_mod.clone())).unwrap()).unwrap();
-    preload.set("time", lua.create_function(move |_lua, ()| Ok(time_mod.clone())).unwrap()).unwrap();
-    preload.set("strings", lua.create_function(move |_lua, ()| Ok(strings_mod.clone())).unwrap()).unwrap();
+    preload
+        .set(
+            "http",
+            lua.create_function(move |_lua, ()| Ok(http_mod.clone()))
+                .unwrap(),
+        )
+        .unwrap();
+    preload
+        .set(
+            "html",
+            lua.create_function(move |_lua, ()| Ok(html_mod.clone()))
+                .unwrap(),
+        )
+        .unwrap();
+    preload
+        .set(
+            "http_util",
+            lua.create_function(move |_lua, ()| Ok(http_util_mod.clone()))
+                .unwrap(),
+        )
+        .unwrap();
+    preload
+        .set(
+            "json",
+            lua.create_function(move |_lua, ()| Ok(json_mod.clone()))
+                .unwrap(),
+        )
+        .unwrap();
+    preload
+        .set(
+            "time",
+            lua.create_function(move |_lua, ()| Ok(time_mod.clone()))
+                .unwrap(),
+        )
+        .unwrap();
+    preload
+        .set(
+            "strings",
+            lua.create_function(move |_lua, ()| Ok(strings_mod.clone()))
+                .unwrap(),
+        )
+        .unwrap();
 
     Ok(())
 }
@@ -394,7 +477,9 @@ fn lua_to_json(val: Value) -> serde_json::Value {
         Value::Boolean(b) => serde_json::Value::Bool(b),
         Value::Integer(i) => serde_json::json!(i),
         Value::Number(n) => serde_json::json!(n),
-        Value::String(s) => serde_json::Value::String(s.to_str().map(|s| s.to_string()).unwrap_or_default()),
+        Value::String(s) => {
+            serde_json::Value::String(s.to_str().map(|s| s.to_string()).unwrap_or_default())
+        }
         Value::Table(t) => {
             let len = t.len().unwrap_or(0);
             if len > 0 {
@@ -443,10 +528,16 @@ fn create_html_element(
     let el_table = lua.create_table()?;
 
     let t_clone = text_content;
-    el_table.set("text", lua.create_function(move |_lua, _self: Value| Ok(t_clone.clone()))?)?;
+    el_table.set(
+        "text",
+        lua.create_function(move |_lua, _self: Value| Ok(t_clone.clone()))?,
+    )?;
 
     let h_clone = html_content.clone();
-    el_table.set("html", lua.create_function(move |_lua, _self: Value| Ok(h_clone.clone()))?)?;
+    el_table.set(
+        "html",
+        lua.create_function(move |_lua, _self: Value| Ok(h_clone.clone()))?,
+    )?;
 
     let attrs = Arc::new(attributes);
     let attrs_1 = attrs.clone();
@@ -479,11 +570,7 @@ fn create_dummy_element(lua: &Lua) -> mlua::Result<Table> {
     create_html_element(lua, String::new(), String::new(), vec![])
 }
 
-fn query_elements(
-    lua: &Lua,
-    html: &Html,
-    selector_str: &str,
-) -> mlua::Result<Table> {
+fn query_elements(lua: &Lua, html: &Html, selector_str: &str) -> mlua::Result<Table> {
     let selection_table = lua.create_table()?;
 
     let selector = match Selector::parse(selector_str) {
