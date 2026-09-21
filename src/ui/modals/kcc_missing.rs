@@ -23,8 +23,8 @@ impl KccMissingModal {
         frame.render_widget(Clear, modal_area);
 
         let title = match lang {
-            AppLanguage::English => " ⚠ Missing KCC Dependencies ",
-            AppLanguage::Portuguese => " ⚠ Dependências KCC Ausentes ",
+            AppLanguage::English => " 󰀪 Missing KCC Dependencies ",
+            AppLanguage::Portuguese => " 󰀪 Dependências KCC Ausentes ",
         };
 
         let block = Block::default()

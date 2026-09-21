@@ -87,16 +87,16 @@ impl ConfirmRemoveModal {
 
         let footer_line = match lang {
             AppLanguage::English => Line::from(vec![
-                Span::styled("[Enter/y] ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                Span::styled("Yes   ", Style::default().fg(Color::White)),
-                Span::styled("[Esc/n] ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                Span::styled("No", Style::default().fg(Color::White)),
+                Span::styled("[Enter] ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled("Confirm   ", Style::default().fg(Color::White)),
+                Span::styled("[Esc] ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled("Cancel", Style::default().fg(Color::White)),
             ]),
             AppLanguage::Portuguese => Line::from(vec![
-                Span::styled("[Enter/s] ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                Span::styled("Sim   ", Style::default().fg(Color::White)),
-                Span::styled("[Esc/n] ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                Span::styled("Não", Style::default().fg(Color::White)),
+                Span::styled("[Enter] ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled("Confirmar   ", Style::default().fg(Color::White)),
+                Span::styled("[Esc] ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled("Cancelar", Style::default().fg(Color::White)),
             ]),
         };
         let footer_p = Paragraph::new(footer_line).alignment(Alignment::Center);

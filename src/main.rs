@@ -1,5 +1,5 @@
 use crossterm::{
-    event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture},
+    event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -157,7 +157,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     execute!(
         stdout,
         EnterAlternateScreen,
-        EnableMouseCapture,
         EnableBracketedPaste
     )?;
     let backend = CrosstermBackend::new(stdout);

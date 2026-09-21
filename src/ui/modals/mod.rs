@@ -1,17 +1,23 @@
 pub mod alert;
 pub mod anilist;
+pub mod confirm_mark_read;
 pub mod confirm_remove;
 pub mod cover_prompt;
+pub mod edit_path;
+pub mod help;
 pub mod install_sources;
 pub mod kcc_missing;
 pub mod settings;
 pub mod source_select;
 
 pub use alert::AlertModal;
-pub use anilist::AnilistModal;
+pub use anilist::{AnilistModal, AnilistStep};
+pub use confirm_mark_read::ConfirmMarkReadModal;
 pub use confirm_remove::ConfirmRemoveModal;
 pub use cover_prompt::ProcessModal;
+pub use edit_path::EditPathModal;
+pub use help::HelpModal;
 pub use install_sources::InstallSourcesModal;
 pub use kcc_missing::KccMissingModal;
-pub use settings::SettingsModal;
+pub use settings::{SettingItem, SettingsAction, SettingsModal};
 pub use source_select::SourceSelectModal;
