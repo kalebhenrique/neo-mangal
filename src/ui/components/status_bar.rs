@@ -122,7 +122,9 @@ impl StatusBarComponent {
             // Chapter list view
             ("chapter_list", AppLanguage::English) => vec![
                 Span::styled(" [Enter] ", key_style),
-                Span::styled("Process/Download  ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled("Download  ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled(" [m] ", key_style),
+                Span::styled("AniList  ", Style::default().fg(Color::LightMagenta).add_modifier(Modifier::BOLD)),
                 Span::styled(" [Space] ", key_style),
                 Span::styled("Check  ", desc_style),
                 Span::styled(" [a] ", key_style),
@@ -140,7 +142,9 @@ impl StatusBarComponent {
             ],
             ("chapter_list", AppLanguage::Portuguese) => vec![
                 Span::styled(" [Enter] ", key_style),
-                Span::styled("Processar/Baixar  ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled("Baixar  ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled(" [m] ", key_style),
+                Span::styled("AniList  ", Style::default().fg(Color::LightMagenta).add_modifier(Modifier::BOLD)),
                 Span::styled(" [Espaço] ", key_style),
                 Span::styled("Marcar  ", desc_style),
                 Span::styled(" [a] ", key_style),

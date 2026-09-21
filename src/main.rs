@@ -9,6 +9,7 @@ use std::io;
 use std::panic;
 use std::time::Duration;
 
+pub mod anilist;
 mod config;
 mod converter;
 mod domain;

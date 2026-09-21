@@ -244,6 +244,49 @@ impl I18n {
         }
     }
 
+    // AniList Integration
+    pub fn anilist_title(lang: AppLanguage) -> &'static str {
+        match lang {
+            AppLanguage::English => " AniList Sync ",
+            AppLanguage::Portuguese => " Sincronização AniList ",
+        }
+    }
+
+    pub fn anilist_status_label(lang: AppLanguage) -> &'static str {
+        match lang {
+            AppLanguage::English => "Status: ",
+            AppLanguage::Portuguese => "Status: ",
+        }
+    }
+
+    pub fn anilist_connected_label(lang: AppLanguage) -> &'static str {
+        match lang {
+            AppLanguage::English => "[ Connected ]",
+            AppLanguage::Portuguese => "[ Conectado ]",
+        }
+    }
+
+    pub fn anilist_disconnected_label(lang: AppLanguage) -> &'static str {
+        match lang {
+            AppLanguage::English => "[ Disconnected ]",
+            AppLanguage::Portuguese => "[ Desconectado ]",
+        }
+    }
+
+    pub fn anilist_connect_prompt(lang: AppLanguage) -> &'static str {
+        match lang {
+            AppLanguage::English => " [a] Connect / Login ",
+            AppLanguage::Portuguese => " [a] Conectar / Login ",
+        }
+    }
+
+    pub fn anilist_disconnect_prompt(lang: AppLanguage) -> &'static str {
+        match lang {
+            AppLanguage::English => " [d] Disconnect ",
+            AppLanguage::Portuguese => " [d] Desconectar ",
+        }
+    }
+
     // Cover Prompt Modal
     pub fn cover_title(lang: AppLanguage) -> &'static str {
         match lang {

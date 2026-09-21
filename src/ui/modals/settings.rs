@@ -22,6 +22,9 @@ pub struct SettingsModal {
     pub profile: String,
     pub format: String,
     pub is_editing_path: bool,
+    pub anilist_username: Option<String>,
+    pub anilist_enabled: bool,
+    pub anilist_sync_on_download: bool,
     autocomplete_state: Option<AutocompleteState>,
 }
 
@@ -33,8 +36,15 @@ impl SettingsModal {
             profile: config.kcc_profile.clone(),
             format: config.kcc_format.clone(),
             is_editing_path: false,
+            anilist_username: config.anilist_username.clone(),
+            anilist_enabled: config.anilist_enabled,
+            anilist_sync_on_download: config.anilist_sync_on_download,
             autocomplete_state: None,
         }
+    }
+
+    pub fn toggle_sync_on_download(&mut self) {
+        self.anilist_sync_on_download = !self.anilist_sync_on_download;
     }
 
     pub fn current_lang(&self) -> AppLanguage {
@@ -188,7 +198,7 @@ impl SettingsModal {
 
     pub fn render(&self, frame: &mut Frame, area: Rect) {
         let lang = self.current_lang();
-        let modal_area = centered_rect(75, 65, area);
+        let modal_area = centered_rect(78, 72, area);
         frame.render_widget(Clear, modal_area);
 
         let block = Block::default()
@@ -204,6 +214,7 @@ impl SettingsModal {
                 Constraint::Length(2), // Validation message
                 Constraint::Length(3), // Language selector
                 Constraint::Length(4), // KCC Profile & description
+                Constraint::Length(3), // AniList connection status
                 Constraint::Min(2),    // Shortcut instructions
             ])
             .split(modal_area);
@@ -301,7 +312,61 @@ impl SettingsModal {
             chunks[3],
         );
 
-        // 5. Instructions
+        // 5. AniList Sync Status
+        let anilist_block = Block::default()
+            .borders(Borders::ALL)
+            .title(I18n::anilist_title(lang))
+            .border_style(Style::default().fg(Color::DarkGray));
+
+        let anilist_lines = if let Some(ref user) = self.anilist_username {
+            let sync_label = if self.anilist_sync_on_download {
+                ("[ ON ]", Color::LightGreen)
+            } else {
+                ("[ OFF ]", Color::DarkGray)
+            };
+            let (hint_key, hint_desc) = match lang {
+                AppLanguage::English => (" [t] Toggle auto-sync on download", "   |   Manual: [m] on chapters"),
+                AppLanguage::Portuguese => (" [t] Alternar auto-sync no download", "   |   Manual: [m] nos capítulos"),
+            };
+            vec![
+                Line::from(vec![
+                    Span::raw(I18n::anilist_status_label(lang)),
+                    Span::styled(I18n::anilist_connected_label(lang), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    Span::raw(" as "),
+                    Span::styled(format!("@{}", user), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::raw("   "),
+                    Span::styled(I18n::anilist_disconnect_prompt(lang), Style::default().fg(Color::Red)),
+                ]),
+                Line::from(vec![
+                    Span::raw(match lang {
+                        AppLanguage::English => "Auto-sync on download: ",
+                        AppLanguage::Portuguese => "Auto-sync no download: ",
+                    }),
+                    Span::styled(sync_label.0, Style::default().fg(sync_label.1).add_modifier(Modifier::BOLD)),
+                    Span::styled(hint_key, Style::default().fg(Color::Cyan)),
+                    Span::styled(hint_desc, Style::default().fg(Color::DarkGray)),
+                ]),
+            ]
+        } else {
+            let desc_line = match lang {
+                AppLanguage::English => "Connect AniList to track progress. Mark read manually with [m] on chapters.",
+                AppLanguage::Portuguese => "Conecte o AniList para rastrear leituras. Marque como lido com [m] nos capítulos.",
+            };
+            vec![
+                Line::from(vec![
+                    Span::raw(I18n::anilist_status_label(lang)),
+                    Span::styled(I18n::anilist_disconnected_label(lang), Style::default().fg(Color::DarkGray)),
+                    Span::raw("   "),
+                    Span::styled(I18n::anilist_connect_prompt(lang), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                ]),
+                Line::from(vec![
+                    Span::styled(format!("↳ {}", desc_line), Style::default().fg(Color::DarkGray)),
+                ]),
+            ]
+        };
+        frame.render_widget(Paragraph::new(anilist_lines).block(anilist_block), chunks[4]);
+
+        // 6. Instructions
         let instructions_data: Vec<(&'static str, &'static str)> = if self.is_editing_path {
             match lang {
                 AppLanguage::English => vec![
@@ -319,17 +384,21 @@ impl SettingsModal {
             match lang {
                 AppLanguage::English => vec![
                     ("[/] ", "Edit Path   "),
-                    ("[p] ", "Kindle Model   "),
+                    ("[p] ", "Model   "),
                     ("[o] ", "Format   "),
-                    ("[l] ", "Language   "),
+                    ("[l] ", "Lang   "),
+                    ("[a] ", "AniList   "),
+                    ("[t] ", "AutoSync   "),
                     ("[Enter] ", "Save & Close   "),
                     ("[Esc] ", "Close"),
                 ],
                 AppLanguage::Portuguese => vec![
                     ("[/] ", "Editar Pasta   "),
-                    ("[p] ", "Modelo Kindle   "),
+                    ("[p] ", "Modelo   "),
                     ("[o] ", "Formato   "),
                     ("[l] ", "Idioma   "),
+                    ("[a] ", "AniList   "),
+                    ("[t] ", "AutoSync   "),
                     ("[Enter] ", "Salvar e Fechar   "),
                     ("[Esc] ", "Fechar"),
                 ],
@@ -344,7 +413,7 @@ impl SettingsModal {
                 ]
             })
             .collect();
-        frame.render_widget(Paragraph::new(Line::from(spans)).alignment(Alignment::Center), chunks[4]);
+        frame.render_widget(Paragraph::new(Line::from(spans)).alignment(Alignment::Center), chunks[5]);
     }
 }
 

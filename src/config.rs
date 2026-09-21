@@ -33,6 +33,14 @@ pub struct Config {
     pub kcc_cover_fill: bool,
     #[serde(default = "default_splitter")]
     pub kcc_splitter: u8,
+    #[serde(default)]
+    pub anilist_token: Option<String>,
+    #[serde(default)]
+    pub anilist_username: Option<String>,
+    #[serde(default)]
+    pub anilist_enabled: bool,
+    #[serde(default)]
+    pub anilist_sync_on_download: bool,
 }
 
 impl Default for Config {
@@ -52,6 +60,10 @@ impl Default for Config {
             kcc_smart_cover_crop: true,
             kcc_cover_fill: true,
             kcc_splitter: 2,
+            anilist_token: None,
+            anilist_username: None,
+            anilist_enabled: false,
+            anilist_sync_on_download: false,
         }
     }
 }
@@ -191,6 +203,9 @@ mod tests {
         assert!(config.kcc_smart_cover_crop);
         assert!(config.kcc_cover_fill);
         assert_eq!(config.kcc_splitter, 2);
+        assert_eq!(config.anilist_token, None);
+        assert!(!config.anilist_enabled);
+        assert!(!config.anilist_sync_on_download);
     }
 
     #[test]

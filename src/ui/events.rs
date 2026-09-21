@@ -21,6 +21,11 @@ pub enum AppEvent {
         manga_url: String,
         chapter_title: String,
     },
+    AnilistConnected {
+        token: String,
+        username: String,
+    },
+    AnilistError(String),
 }
 
 pub struct EventHandler {

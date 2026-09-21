@@ -23,10 +23,11 @@ use crate::ui::components::{
     ChapterListComponent, FavoritesListComponent, HeaderComponent, MangaListComponent,
     ProgressBarComponent, SearchBarComponent, StatusBarComponent,
 };
+use crate::anilist::AnilistClient;
 use crate::scraper::manager::SourceManager;
 use crate::ui::events::AppEvent;
 use crate::ui::modals::{
-    AlertModal, ConfirmRemoveModal, InstallSourcesModal, KccMissingModal, ProcessModal,
+    AlertModal, AnilistModal, ConfirmRemoveModal, InstallSourcesModal, KccMissingModal, ProcessModal,
     SettingsModal, SourceSelectModal,
 };
 
@@ -41,6 +42,7 @@ pub enum CurrentView {
 
 pub enum ModalState {
     Settings(SettingsModal),
+    Anilist(AnilistModal),
     Process(ProcessModal),
     KccMissing(KccMissingModal),
     Alert(AlertModal),
@@ -305,6 +307,22 @@ impl App {
                     &chapter_title,
                 );
             }
+            AppEvent::AnilistConnected { token, username } => {
+                self.config.anilist_token = Some(token);
+                self.config.anilist_username = Some(username.clone());
+                self.config.anilist_enabled = true;
+                let _ = self.config.save();
+                self.active_modal = Some(ModalState::Settings(SettingsModal::new(&self.config)));
+                self.job_status = JobStatus::Done(format!("AniList: Connected as @{}!", username));
+            }
+            AppEvent::AnilistError(err) => {
+                if let Some(ModalState::Anilist(ref mut a)) = self.active_modal {
+                    a.is_loading = false;
+                    a.status_msg = Some((format!("Error: {}", err), ratatui::style::Color::Red));
+                } else {
+                    self.job_status = JobStatus::Failed(format!("AniList error: {}", err));
+                }
+            }
         }
     }
 
@@ -312,6 +330,10 @@ impl App {
     fn handle_paste(&mut self, text: &str) {
         if let Some(ModalState::Process(ref mut modal)) = self.active_modal {
             modal.handle_paste(text);
+        } else if let Some(ModalState::Anilist(ref mut modal)) = self.active_modal {
+            for c in text.chars() {
+                modal.handle_char(c);
+            }
         }
     }
 
@@ -391,9 +413,69 @@ impl App {
                             KeyCode::Char('l') | KeyCode::Char('L') => {
                                 s.cycle_language();
                             }
+                            KeyCode::Char('a') | KeyCode::Char('A') => {
+                                self.active_modal = Some(ModalState::Anilist(AnilistModal::new()));
+                            }
+                            KeyCode::Char('t') | KeyCode::Char('T') => {
+                                s.toggle_sync_on_download();
+                                self.config.anilist_sync_on_download = s.anilist_sync_on_download;
+                                let _ = self.config.save();
+                                let msg = if s.anilist_sync_on_download {
+                                    "AniList auto-sync on download: ENABLED"
+                                } else {
+                                    "AniList auto-sync on download: DISABLED"
+                                };
+                                self.job_status = JobStatus::Done(msg.to_string());
+                            }
+                            KeyCode::Char('d') | KeyCode::Char('D') => {
+                                if self.config.anilist_username.is_some() {
+                                    self.config.anilist_token = None;
+                                    self.config.anilist_username = None;
+                                    self.config.anilist_enabled = false;
+                                    let _ = self.config.save();
+                                    s.anilist_username = None;
+                                    s.anilist_enabled = false;
+                                    self.job_status = JobStatus::Done("AniList disconnected".to_string());
+                                }
+                            }
                             _ => {}
                         }
                     }
+                }
+                ModalState::Anilist(a) => match key.code {
+                    KeyCode::Esc => {
+                        self.active_modal = Some(ModalState::Settings(SettingsModal::new(&self.config)));
+                    }
+                    KeyCode::Tab => {
+                        AnilistModal::open_browser();
+                    }
+                    KeyCode::Backspace => {
+                        a.handle_backspace();
+                    }
+                    KeyCode::Char(c) => {
+                        a.handle_char(c);
+                    }
+                    KeyCode::Enter => {
+                        let token = a.input_token.trim().to_string();
+                        if token.is_empty() {
+                            a.status_msg = Some(("Token cannot be empty".to_string(), ratatui::style::Color::Red));
+                        } else {
+                            a.is_loading = true;
+                            a.status_msg = None;
+                            let tx = self.event_tx.clone();
+                            tokio::spawn(async move {
+                                match AnilistClient::verify_token(&token).await {
+                                    Ok(username) => {
+                                        let _ = tx.send(AppEvent::AnilistConnected { token, username });
+                                    }
+                                    Err(e) => {
+                                        let _ = tx.send(AppEvent::AnilistError(e.to_string()));
+                                    }
+                                }
+                            });
+                        }
+                    }
+                    _ => {}
                 }
                 ModalState::Process(p) => match key.code {
                     KeyCode::Esc => {
@@ -820,6 +902,57 @@ impl App {
                                 }
                             }
                         }
+                        // Mark as read on AniList up to selected chapter
+                        KeyCode::Char('m') | KeyCode::Char('M') => {
+                            let page_chapters = self.current_page_chapters();
+                            if let Some(idx) = self.chapter_list_state.selected() {
+                                if let Some(ch) = page_chapters.get(idx) {
+                                    if let Some(ref manga) = self.selected_manga {
+                                        if let Some(ref token) = self.config.anilist_token {
+                                            let manga_name = manga.title.clone();
+                                            let chapter_idx = ch.number.unwrap_or(1.0).floor() as i32;
+                                            let chapter_title = ch.title.clone();
+                                            let token = token.clone();
+                                            let tx = self.event_tx.clone();
+                                            self.job_status = JobStatus::ConvertingKcc {
+                                                message: format!("Syncing AniList: Ch. {}...", chapter_idx),
+                                            };
+                                            tokio::spawn(async move {
+                                                match AnilistClient::search_manga(&manga_name).await {
+                                                    Ok(Some(media_id)) => {
+                                                        match AnilistClient::update_progress(&token, media_id, chapter_idx).await {
+                                                            Ok(_) => {
+                                                                let _ = tx.send(AppEvent::OperationSuccess(format!(
+                                                                    "AniList: Marked read up to Ch. {} ({})",
+                                                                    chapter_idx, chapter_title
+                                                                )));
+                                                            }
+                                                            Err(e) => {
+                                                                let _ = tx.send(AppEvent::OperationError(format!(
+                                                                    "AniList sync failed: {}", e
+                                                                )));
+                                                            }
+                                                        }
+                                                    }
+                                                    Ok(None) => {
+                                                        let _ = tx.send(AppEvent::OperationError(format!(
+                                                            "Manga \"{}\" not found on AniList", manga_name
+                                                        )));
+                                                    }
+                                                    Err(e) => {
+                                                        let _ = tx.send(AppEvent::OperationError(format!(
+                                                            "AniList search failed: {}", e
+                                                        )));
+                                                    }
+                                                }
+                                            });
+                                        } else {
+                                            self.job_status = JobStatus::Failed("AniList not connected! Press 's' then 'a' to connect.".to_string());
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         // Enter opens the unified Process Modal (KCC, Fusion, Cover Preview, Direct CBZ)
                         KeyCode::Enter => {
                             self.trigger_process_modal();
@@ -1141,6 +1274,24 @@ impl App {
                         cbz_path.display()
                     )));
                 }
+
+                if config.anilist_enabled && config.anilist_sync_on_download {
+                    if let Some(token) = config.anilist_token.clone() {
+                        let manga_name = manga.title.clone();
+                        let chapter_idx = chapter.number.unwrap_or(1.0).floor() as i32;
+                        let tx_ani = tx.clone();
+                        tokio::spawn(async move {
+                            if let Ok(Some(media_id)) = AnilistClient::search_manga(&manga_name).await {
+                                if AnilistClient::update_progress(&token, media_id, chapter_idx).await.is_ok() {
+                                    let _ = tx_ani.send(AppEvent::OperationSuccess(format!(
+                                        "AniList synced: {} (Ch. {})",
+                                        manga_name, chapter_idx
+                                    )));
+                                }
+                            }
+                        });
+                    }
+                }
             }
         });
     }
@@ -1207,6 +1358,7 @@ impl App {
 
             let mut global_page_idx = 1;
             let total_ch = target_chapters.len();
+            let last_chapter_number = target_chapters.last().and_then(|c| c.number);
 
             for (ch_idx, chapter) in target_chapters.into_iter().enumerate() {
                 let _ = tx.send(AppEvent::DownloadStatus(JobStatus::ConvertingKcc {
@@ -1318,6 +1470,24 @@ impl App {
                     "Volume Fusion complete!\nSaved at: {}",
                     cbz_path.display()
                 )));
+            }
+
+            if config.anilist_enabled && config.anilist_sync_on_download {
+                if let Some(token) = config.anilist_token.clone() {
+                    let manga_name = manga.title.clone();
+                    let chapter_idx = last_chapter_number.unwrap_or(1.0).floor() as i32;
+                    let tx_ani = tx.clone();
+                    tokio::spawn(async move {
+                        if let Ok(Some(media_id)) = AnilistClient::search_manga(&manga_name).await {
+                            if AnilistClient::update_progress(&token, media_id, chapter_idx).await.is_ok() {
+                                let _ = tx_ani.send(AppEvent::OperationSuccess(format!(
+                                    "AniList volume synced: {} (Ch. {})",
+                                    manga_name, chapter_idx
+                                )));
+                            }
+                        }
+                    });
+                }
             }
         });
     }
@@ -1441,6 +1611,7 @@ impl App {
         if let Some(ref mut modal) = self.active_modal {
             match modal {
                 ModalState::Settings(s) => s.render(frame, area),
+                ModalState::Anilist(a) => a.render(frame, area, lang),
                 ModalState::Process(p) => p.render(frame, area, lang),
                 ModalState::KccMissing(km) => km.render(frame, area, lang),
                 ModalState::Alert(a) => a.render(frame, area),
